@@ -11,6 +11,7 @@ import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge, searchEntities, type EntityKind } from "../services/knowledge.js";
+import { getMyShootingContext, isArmsLegalTopic } from "../services/myshooting.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
 import { getSocket, setLastError, setQr, setSocket, setStatus } from "../services/botState.js";
 import fs from "fs/promises";
@@ -339,8 +340,22 @@ export async function startWhatsAppBot(): Promise<void> {
       const mapsHint = locationHint.city
         ? buildMapsLink(`${locationHint.city} ${locationHint.state || ""}`)
         : "";
+      const myshooting = getMyShootingContext(text);
+      const legalTopic = isArmsLegalTopic(text);
 
-      const context = [knowledge, mapsHint].filter(Boolean).join("\n");
+      if (legalTopic && myshooting.confidence === "low") {
+        await sock.sendMessage(jid, {
+          text:
+            "Para te responder com alta precisao juridica (padrao MyShooting IA), preciso de mais detalhes do caso: tipo de situacao (porte, posse, transporte, CAC), sua UF e contexto objetivo."
+        });
+        await sock.sendMessage(jid, {
+          text:
+            "Sem esses dados, posso te passar apenas orientacao geral e recomendar confirmacao em fonte oficial (PF, Exercito e Diario Oficial)."
+        });
+        return;
+      }
+
+      const context = [knowledge, mapsHint, myshooting.context].filter(Boolean).join("\n\n");
       const response = await generateText(text, context);
 
       await sock.sendMessage(jid, { text: response });
