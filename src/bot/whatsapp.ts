@@ -118,9 +118,17 @@ export async function startWhatsAppBot(): Promise<void> {
       const msg = err?.message || err?.output?.payload?.message || "Connection closed";
       setLastError(msg);
       const reason = (update.lastDisconnect?.error as any)?.output?.statusCode;
-      if (reason !== DisconnectReason.loggedOut) {
-        void startWhatsAppBot();
+      if (reason === DisconnectReason.loggedOut) {
+        void (async () => {
+          await fs.rm(authDir, { recursive: true, force: true });
+          setQr(null);
+          setStatus("connecting");
+          setLastError("Logged out. Generating new QR.");
+          void startWhatsAppBot();
+        })();
+        return;
       }
+      void startWhatsAppBot();
     }
   });
 
@@ -208,5 +216,6 @@ export async function resetWhatsAppSession(): Promise<void> {
   await fs.rm(authDir, { recursive: true, force: true });
   setQr(null);
   setStatus("connecting");
+  setLastError(null);
   void startWhatsAppBot();
 }
