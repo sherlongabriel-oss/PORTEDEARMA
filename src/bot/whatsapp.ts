@@ -9,13 +9,17 @@ import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge } from "../services/knowledge.js";
+import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
 
 function normalizePhone(jid: string): string {
   return jid.replace(/[^0-9]/g, "");
 }
 
 function isMaster(jid: string): boolean {
-  return normalizePhone(jid) === normalizePhone(config.masterPhone);
+  if (config.masterPhone) {
+    return normalizePhone(jid) === normalizePhone(config.masterPhone);
+  }
+  return false;
 }
 
 async function getTextFromMessage(message: any): Promise<{ text: string; isAudio: boolean; location?: { lat: number; lng: number } }> {
@@ -84,6 +88,18 @@ export async function startWhatsAppBot(): Promise<void> {
       qrcode.generate(update.qr, { small: true });
       logger.info("QR code gerado. Apenas o usuario master deve escanear.");
     }
+    if (update.connection === "open") {
+      void (async () => {
+        const existing = await getMasterJid();
+        if (!existing) {
+          const jid = sock.user?.id || "";
+          if (jid) {
+            await setMasterJid(jid);
+            logger.info("Master definido pelo primeiro QR conectado.");
+          }
+        }
+      })();
+    }
     if (update.connection === "close") {
       const reason = (update.lastDisconnect?.error as any)?.output?.statusCode;
       if (reason !== DisconnectReason.loggedOut) {
@@ -108,6 +124,30 @@ export async function startWhatsAppBot(): Promise<void> {
 
     const locationHint = extractLocationRequest(text);
     const kind = detectKind(text);
+    const lowerText = text.toLowerCase().trim();
+
+    if (lowerText.startsWith("admin")) {
+      const masterJid = await getMasterJid();
+      const isDynamicMaster = masterJid && normalizePhone(jid) === normalizePhone(masterJid);
+      const allowed = isDynamicMaster || isMaster(jid);
+      if (!allowed) {
+        await sock.sendMessage(jid, {
+          text: "Apenas o usuario master pode executar comandos administrativos."
+        });
+        return;
+      }
+      if (lowerText.includes("desconectar") || lowerText.includes("logout")) {
+        await sock.sendMessage(jid, { text: "Sessao encerrada. Reconecte via QR." });
+        await clearMasterJid();
+        await sock.logout();
+        return;
+      }
+      if (lowerText.includes("status")) {
+        const current = masterJid || "(nao definido)";
+        await sock.sendMessage(jid, { text: `Master atual: ${current}` });
+        return;
+      }
+    }
 
     if (location) {
       const mapLink = buildMapsLink(`${location.lat},${location.lng}`);
@@ -141,10 +181,5 @@ export async function startWhatsAppBot(): Promise<void> {
       });
     }
 
-    if (!isMaster(jid) && text.toLowerCase().includes("admin")) {
-      await sock.sendMessage(jid, {
-        text: "Apenas o usuario master pode executar comandos administrativos."
-      });
-    }
   });
 }
