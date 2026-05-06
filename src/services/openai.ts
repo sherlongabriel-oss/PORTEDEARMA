@@ -59,6 +59,7 @@ export async function generateText(prompt: string, context: string): Promise<str
 
   const response = await client.responses.create({
     model: "gpt-4o-mini",
+    max_output_tokens: 700,
     input: [
       {
         role: "system",

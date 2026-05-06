@@ -6,6 +6,8 @@ interface MyShootingEntry {
   sources: string[];
 }
 
+type AudienceProfile = "cac" | "policial" | "formacao" | "geral";
+
 const ENTRIES: MyShootingEntry[] = [
   {
     id: "base-legal",
@@ -110,4 +112,49 @@ export function getMyShootingContext(question: string): {
     confidence,
     matchedTopics: top.map(({ entry }) => entry.title)
   };
+}
+
+function detectAudienceProfile(question: string): AudienceProfile {
+  const lower = normalize(question);
+
+  if (lower.includes("policial") || lower.includes("policia")) {
+    return "policial";
+  }
+  if (lower.includes("cac") || lower.includes("atirador") || lower.includes("colecionador")) {
+    return "cac";
+  }
+  if (
+    lower.includes("formar") ||
+    lower.includes("curso") ||
+    lower.includes("instrutor") ||
+    lower.includes("prova")
+  ) {
+    return "formacao";
+  }
+
+  return "geral";
+}
+
+export function getMyShootingResponseDirective(question: string): string {
+  const profile = detectAudienceProfile(question);
+
+  const profileLine =
+    profile === "policial"
+      ? "Perfil principal: policial. Priorize conformidade operacional, legalidade de conduta e cadeia de responsabilidade funcional."
+      : profile === "cac"
+        ? "Perfil principal: CAC. Priorize regularidade documental, transporte legal, uso permitido e fiscalizacao."
+        : profile === "formacao"
+          ? "Perfil principal: formacao. Priorize didatica tecnica, requisitos legais e roteiro objetivo de preparo."
+          : "Perfil principal: geral. Priorize clareza, legalidade e passos praticos.";
+
+  return [
+    "Padrao MyShooting IA - formato obrigatorio de resposta:",
+    profileLine,
+    "1) Resposta Direta: comece com a conclusao pratica em 1-2 frases.",
+    "2) Base Legal: cite apenas normas que voce tenha base no contexto; se nao tiver, diga que falta base especifica.",
+    "3) Aplicacao Pratica: descreva o que fazer agora em passos curtos.",
+    "4) Limites e Risco: destaque o que nao pode ser feito e o risco juridico.",
+    "5) Verificacao Oficial: indicar onde confirmar (PF, Exercito, DOU/Gov.br).",
+    "Evite texto genérico, floreio e respostas vagas."
+  ].join("\n");
 }

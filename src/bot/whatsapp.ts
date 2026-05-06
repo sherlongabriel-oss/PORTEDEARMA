@@ -11,7 +11,7 @@ import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge, searchEntities, type EntityKind } from "../services/knowledge.js";
-import { getMyShootingContext, isArmsLegalTopic } from "../services/myshooting.js";
+import { getMyShootingContext, getMyShootingResponseDirective, isArmsLegalTopic } from "../services/myshooting.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
 import { getSocket, setLastError, setQr, setSocket, setStatus } from "../services/botState.js";
 import fs from "fs/promises";
@@ -341,13 +341,14 @@ export async function startWhatsAppBot(): Promise<void> {
         ? buildMapsLink(`${locationHint.city} ${locationHint.state || ""}`)
         : "";
       const myshooting = getMyShootingContext(text);
+      const directive = getMyShootingResponseDirective(text);
       const legalTopic = isArmsLegalTopic(text);
 
       if (legalTopic && myshooting.confidence === "low") {
         const preliminaryPrompt =
           `Pergunta do usuario: ${text}\n\n` +
           "Responda com orientacao geral inicial, em tom pratico e seguro, deixando claro que e uma analise preliminar.";
-        const preliminaryContext = [knowledge, myshooting.context].filter(Boolean).join("\n\n");
+        const preliminaryContext = [knowledge, myshooting.context, directive].filter(Boolean).join("\n\n");
         const preliminary = await generateText(preliminaryPrompt, preliminaryContext);
 
         await sock.sendMessage(jid, {
@@ -358,7 +359,7 @@ export async function startWhatsAppBot(): Promise<void> {
         return;
       }
 
-      const context = [knowledge, mapsHint, myshooting.context].filter(Boolean).join("\n\n");
+      const context = [knowledge, mapsHint, myshooting.context, directive].filter(Boolean).join("\n\n");
       const response = await generateText(text, context);
 
       await sock.sendMessage(jid, { text: response });
