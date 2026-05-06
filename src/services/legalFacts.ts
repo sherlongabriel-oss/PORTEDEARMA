@@ -50,7 +50,34 @@ function isShootingTestCostQuestion(text: string): boolean {
   return asksCost && hasExam;
 }
 
+function isCacHowManyGunsQuestion(text: string): boolean {
+  const lower = normalize(text);
+  const asksQuantity =
+    lower.includes("quantas armas") ||
+    lower.includes("quantidade de armas") ||
+    lower.includes("limite de armas") ||
+    lower.includes("pode ter");
+  const hasCac =
+    lower.includes("cac") ||
+    lower.includes("atirador") ||
+    lower.includes("cacador") ||
+    lower.includes("caçador") ||
+    lower.includes("colecionador");
+  return asksQuantity && hasCac;
+}
+
 export function resolveCriticalLegalFact(question: string): string | null {
+  if (isCacHowManyGunsQuestion(question)) {
+    return [
+      "Para CAC, os limites variam por categoria e nivel de atirador, nao existe um numero unico para todos.",
+      "Atirador nivel 1: ate 4 armas de uso permitido; nivel 2: ate 8 de uso permitido; nivel 3: ate 16 armas, sendo ate 4 de calibre restrito e as demais de calibre permitido.",
+      "Cacador (CAS): ate 6 armas, com limite de ate 2 de calibre restrito.",
+      "Colecionador: acervo por criterios de colecao, com controle por modelo/tipo/variante/calibre/procedencia, conforme regras vigentes do sistema militar.",
+      "Base normativa a conferir na redacao consolidada vigente: Decreto 11.615/2023 e Portaria Conjunta C Ex/DG-PF 2/2023, com alteracoes posteriores aplicaveis (incluindo atos conjuntos supervenientes).",
+      "Atencao: progressao de nivel e limites dependem de requisitos de habitualidade e demais condicionantes administrativos em vigor."
+    ].join(" ");
+  }
+
   if (isHowToGetCarryQuestion(question)) {
     return [
       "No Brasil, porte de arma para particular e excepcional: a regra geral e proibicao de porte, salvo hipoteses legais e autorizacao especifica.",

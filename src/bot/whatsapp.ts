@@ -393,7 +393,7 @@ export async function startWhatsAppBot(): Promise<void> {
       const { text, isAudio, location } = await getTextFromMessage(message);
       const sendReply = async (replyText: string): Promise<void> => {
         await sock.sendMessage(jid, { text: replyText });
-        if (config.ttsEnabled && isAudio) {
+        if (config.ttsEnabled) {
           const audioBuffer = await synthesizeSpeech(replyText);
           if (audioBuffer.length > 0) {
             await sock.sendMessage(jid, {
