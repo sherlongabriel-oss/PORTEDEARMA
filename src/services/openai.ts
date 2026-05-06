@@ -4,10 +4,27 @@ import { createReadStream } from "fs";
 import os from "os";
 import path from "path";
 import { config } from "../config.js";
+import { logger } from "../utils/logger.js";
 
-const client = new OpenAI({ apiKey: config.openaiApiKey });
+let missingKeyWarned = false;
+
+function getOpenAIClient(): OpenAI | null {
+  if (!config.openaiApiKey) {
+    if (!missingKeyWarned) {
+      logger.warn("OPENAI_API_KEY nao configurada. Recursos de IA ficaram indisponiveis.");
+      missingKeyWarned = true;
+    }
+    return null;
+  }
+  return new OpenAI({ apiKey: config.openaiApiKey });
+}
 
 export async function transcribeAudio(buffer: Buffer): Promise<string> {
+  const client = getOpenAIClient();
+  if (!client) {
+    return "";
+  }
+
   const tempFile = path.join(os.tmpdir(), `audio-${Date.now()}.ogg`);
   await fs.writeFile(tempFile, buffer);
   try {
@@ -23,6 +40,11 @@ export async function transcribeAudio(buffer: Buffer): Promise<string> {
 }
 
 export async function generateText(prompt: string, context: string): Promise<string> {
+  const client = getOpenAIClient();
+  if (!client) {
+    return "No momento estou sem integracao de IA. Configure OPENAI_API_KEY para habilitar respostas inteligentes.";
+  }
+
   const response = await client.responses.create({
     model: "gpt-4o-mini",
     input: [
@@ -55,6 +77,11 @@ export async function generateText(prompt: string, context: string): Promise<str
 }
 
 export async function synthesizeSpeech(text: string): Promise<Buffer> {
+  const client = getOpenAIClient();
+  if (!client) {
+    return Buffer.from("");
+  }
+
   const response = await client.audio.speech.create({
     model: "gpt-4o-mini-tts",
     voice: config.defaultVoice,

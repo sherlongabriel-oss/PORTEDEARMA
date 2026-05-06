@@ -1,5 +1,7 @@
 import makeWASocket, {
+  Browsers,
   DisconnectReason,
+  fetchLatestBaileysVersion,
   downloadMediaMessage,
   useMultiFileAuthState,
   proto
@@ -82,11 +84,19 @@ function detectKind(text: string): "delegacia" | "militar" | "clube" | undefined
 
 export async function startWhatsAppBot(): Promise<void> {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  logger.info({ version, isLatest }, "Baileys version loaded");
+
   const sock = makeWASocket({
     auth: state,
+    browser: Browsers.windows("Desktop"),
+    version,
     printQRInTerminal: false,
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
     logger
   });
+  setStatus("connecting");
   setSocket(sock);
 
   sock.ev.on("connection.update", (update) => {
@@ -198,11 +208,13 @@ export async function startWhatsAppBot(): Promise<void> {
 
     if (config.ttsEnabled && isAudio) {
       const audioBuffer = await synthesizeSpeech(response);
-      await sock.sendMessage(jid, {
-        audio: audioBuffer,
-        mimetype: "audio/mpeg",
-        ptt: true
-      });
+      if (audioBuffer.length > 0) {
+        await sock.sendMessage(jid, {
+          audio: audioBuffer,
+          mimetype: "audio/mpeg",
+          ptt: true
+        });
+      }
     }
 
   });
