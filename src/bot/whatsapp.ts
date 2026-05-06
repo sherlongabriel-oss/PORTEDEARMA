@@ -10,13 +10,14 @@ import qrcode from "qrcode-terminal";
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
-import { buildMapsLink, queryKnowledge } from "../services/knowledge.js";
+import { buildMapsLink, queryKnowledge, searchEntities, type EntityKind } from "../services/knowledge.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
 import { getSocket, setLastError, setQr, setSocket, setStatus } from "../services/botState.js";
 import fs from "fs/promises";
 import path from "path";
 
 const authDir = path.resolve("auth");
+const pendingNearestByJid = new Map<string, { kind: EntityKind; createdAt: number }>();
 
 function normalizePhone(jid: string): string {
   return jid.replace(/[^0-9]/g, "");
@@ -64,11 +65,57 @@ async function getTextFromMessage(messageInfo: proto.IWebMessageInfo): Promise<{
 }
 
 function extractLocationRequest(text: string): { city?: string; state?: string } {
-  const lower = text.toLowerCase();
-  if (lower.includes("sp") || lower.includes("sao paulo")) {
-    return { city: "Sao Paulo", state: "SP" };
+  const cleaned = text.replace(/\s+/g, " ").trim();
+
+  const cityStateMatch = cleaned.match(/(?:estou em|moro em|sou de|em)\s+([\p{L}\s]+?)(?:\s*[-/,]\s*|\s+)(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/iu);
+  if (cityStateMatch) {
+    return { city: cityStateMatch[1].trim(), state: cityStateMatch[2].toUpperCase() };
   }
+
+  const stateOnly = cleaned.match(/\b(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)\b/i);
+  if (stateOnly) {
+    return { state: stateOnly[1].toUpperCase() };
+  }
+
+  const cityOnly = cleaned.match(/(?:estou em|moro em|sou de|em)\s+([\p{L}\s]{3,})$/iu);
+  if (cityOnly) {
+    return { city: cityOnly[1].trim() };
+  }
+
   return {};
+}
+
+function needsNearestDelegacia(text: string): boolean {
+  const lower = text.toLowerCase();
+  const hasDelegacia = lower.includes("delegacia") || lower.includes("policia") || lower.includes("polícia");
+  const asksNearest =
+    lower.includes("mais proxima") ||
+    lower.includes("mais próxima") ||
+    lower.includes("perto") ||
+    lower.includes("proxima") ||
+    lower.includes("próxima");
+  return hasDelegacia && asksNearest;
+}
+
+function hasAnyLocationInfo(locationHint: { city?: string; state?: string }, location?: { lat: number; lng: number }): boolean {
+  return Boolean(location || locationHint.city || locationHint.state);
+}
+
+function formatEntitiesWithMaps(
+  title: string,
+  entities: Array<{ name: string; address?: string | null; city?: string | null; state?: string | null }>
+): string {
+  if (entities.length === 0) {
+    return `${title}\nNao encontrei registros locais no banco agora, mas voce pode buscar no mapa:\n${buildMapsLink("delegacia perto de mim")}`;
+  }
+
+  const lines = entities.slice(0, 5).map((entity, idx) => {
+    const query = [entity.name, entity.address, entity.city, entity.state].filter(Boolean).join(" ");
+    const map = buildMapsLink(query);
+    const label = [entity.name, entity.city, entity.state].filter(Boolean).join(" - ");
+    return `${idx + 1}) ${label}\n${map}`;
+  });
+  return `${title}\n${lines.join("\n\n")}`;
 }
 
 function detectKind(text: string): "delegacia" | "militar" | "clube" | undefined {
@@ -169,6 +216,12 @@ export async function startWhatsAppBot(): Promise<void> {
       const locationHint = extractLocationRequest(text);
       const kind = detectKind(text);
       const lowerText = text.toLowerCase().trim();
+      const nearestIntent = needsNearestDelegacia(text);
+      const pendingNearest = pendingNearestByJid.get(jid);
+
+      if (pendingNearest && Date.now() - pendingNearest.createdAt > 10 * 60 * 1000) {
+        pendingNearestByJid.delete(jid);
+      }
 
       if (lowerText.startsWith("admin")) {
         const masterJid = await getMasterJid();
@@ -191,6 +244,44 @@ export async function startWhatsAppBot(): Promise<void> {
           await sock.sendMessage(jid, { text: `Master atual: ${current}` });
           return;
         }
+      }
+
+      if (nearestIntent && !hasAnyLocationInfo(locationHint, location)) {
+        pendingNearestByJid.set(jid, { kind: "delegacia", createdAt: Date.now() });
+        await sock.sendMessage(jid, {
+          text:
+            "Para achar a delegacia mais proxima, me envie sua localizacao atual pelo WhatsApp ou diga sua cidade/UF (ex.: Campinas/SP)."
+        });
+        return;
+      }
+
+      if ((pendingNearestByJid.has(jid) || nearestIntent) && location) {
+        pendingNearestByJid.delete(jid);
+        const mapsLink = buildMapsLink(`delegacia perto de ${location.lat},${location.lng}`);
+        await sock.sendMessage(jid, {
+          text: `Delegacias proximas da sua localizacao:\n${mapsLink}`
+        });
+        return;
+      }
+
+      if ((pendingNearestByJid.has(jid) || nearestIntent) && (locationHint.city || locationHint.state)) {
+        pendingNearestByJid.delete(jid);
+        const entities = await searchEntities({
+          kind: "delegacia",
+          city: locationHint.city,
+          state: locationHint.state
+        });
+
+        const localLabel = [locationHint.city, locationHint.state].filter(Boolean).join("/") || "sua regiao";
+        await sock.sendMessage(jid, {
+          text: formatEntitiesWithMaps(`Delegacias proximas em ${localLabel}:`, entities)
+        });
+
+        const mapsLink = buildMapsLink(`delegacia em ${localLabel}`);
+        await sock.sendMessage(jid, {
+          text: `Busca ampla no Google Maps:\n${mapsLink}`
+        });
+        return;
       }
 
       if (location) {

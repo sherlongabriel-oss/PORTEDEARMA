@@ -9,18 +9,29 @@ export interface KnowledgeQuery {
   freeText?: string;
 }
 
-export async function queryKnowledge(query: KnowledgeQuery): Promise<string> {
+export interface EntityResult {
+  name: string;
+  kind: EntityKind;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  notes?: string | null;
+}
+
+export async function searchEntities(query: KnowledgeQuery, limit = 5): Promise<EntityResult[]> {
   const { kind, city, state, freeText } = query;
 
   const supabase = getSupabaseClient();
   if (!supabase) {
-    return "Base de dados indisponivel no momento.";
+    return [];
   }
 
   let builder = supabase
     .from("entities")
     .select("name,kind,phone,email,address,city,state,notes")
-    .limit(5);
+    .limit(limit);
 
   if (kind) {
     builder = builder.eq("kind", kind);
@@ -37,6 +48,20 @@ export async function queryKnowledge(query: KnowledgeQuery): Promise<string> {
 
   const { data, error } = await builder;
   if (error || !data || data.length === 0) {
+    return [];
+  }
+
+  return data as EntityResult[];
+}
+
+export async function queryKnowledge(query: KnowledgeQuery): Promise<string> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return "Base de dados indisponivel no momento.";
+  }
+
+  const data = await searchEntities(query);
+  if (data.length === 0) {
     return "Sem registros no momento.";
   }
 
