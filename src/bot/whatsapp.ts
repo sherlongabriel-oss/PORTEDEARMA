@@ -224,6 +224,24 @@ function isMinAgePossessionQuestion(text: string): boolean {
   return asksAge && hasPossession;
 }
 
+function isWeaponAgeQuestionHighPriority(text: string): boolean {
+  const lower = normalizeForCompare(text);
+  const asksAge =
+    lower.includes("quantos anos") ||
+    lower.includes("com quantos anos") ||
+    lower.includes("idade minima") ||
+    lower.includes("idade para") ||
+    lower.includes("idade");
+  const asksWeapon =
+    lower.includes("arma") ||
+    lower.includes("comprar arma") ||
+    lower.includes("ter arma") ||
+    lower.includes("possuir arma") ||
+    lower.includes("adquirir arma");
+
+  return asksAge && asksWeapon;
+}
+
 async function buildMinAgePossessionResponse(): Promise<string> {
   const online = await verifyMinAgeForPossessionOnline();
   const verificationStatus = online.confirmed
@@ -391,6 +409,16 @@ export async function startWhatsAppBot(): Promise<void> {
         if (isAudio && jid) {
           await sendReply("Nao consegui entender o audio. Tente falar mais perto do microfone ou envie em texto.");
         }
+        return;
+      }
+
+      if (isWeaponAgeQuestionHighPriority(text)) {
+        const fixedResponse =
+          "Para posse/aquisicao civil comum de arma de fogo, a idade minima legal e 25 anos. " +
+          "Base legal: Lei 10.826/2003, art. 4o, inciso I. " +
+          "Se o caso for categoria funcional com regime proprio, e necessario analisar a norma especifica da categoria.";
+        await sendReply(fixedResponse);
+        lastReplyByJid.set(jid, normalizeForCompare(fixedResponse));
         return;
       }
 
