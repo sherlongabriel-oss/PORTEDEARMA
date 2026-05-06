@@ -29,29 +29,32 @@ function isMaster(jid: string): boolean {
   return false;
 }
 
-async function getTextFromMessage(message: any): Promise<{ text: string; isAudio: boolean; location?: { lat: number; lng: number } }> {
-  if (message?.conversation) {
-    return { text: message.conversation, isAudio: false };
+async function getTextFromMessage(messageInfo: proto.IWebMessageInfo): Promise<{ text: string; isAudio: boolean; location?: { lat: number; lng: number } }> {
+  const content = messageInfo.message;
+
+  if (content?.conversation) {
+    return { text: content.conversation, isAudio: false };
   }
-  if (message?.extendedTextMessage?.text) {
-    return { text: message.extendedTextMessage.text, isAudio: false };
+  if (content?.extendedTextMessage?.text) {
+    return { text: content.extendedTextMessage.text, isAudio: false };
   }
-  if (message?.locationMessage) {
-    const { degreesLatitude, degreesLongitude } = message.locationMessage;
+  if (content?.locationMessage) {
+    const { degreesLatitude, degreesLongitude } = content.locationMessage;
+    const hasValidCoords = typeof degreesLatitude === "number" && typeof degreesLongitude === "number";
     return {
       text: "localizacao recebida",
       isAudio: false,
-      location: { lat: degreesLatitude, lng: degreesLongitude }
+      location: hasValidCoords ? { lat: degreesLatitude, lng: degreesLongitude } : undefined
     };
   }
-  if (message?.audioMessage) {
+  if (content?.audioMessage) {
     const buffer = await downloadMediaMessage(
-      message as proto.IWebMessageInfo,
+      messageInfo,
       "buffer",
       {},
       {
         logger,
-        reuploadRequest: async () => message as proto.IWebMessageInfo
+        reuploadRequest: async () => messageInfo
       }
     );
     const transcript = await transcribeAudio(buffer as Buffer);
@@ -151,68 +154,83 @@ export async function startWhatsAppBot(): Promise<void> {
     }
 
     const jid = message.key.remoteJid || "";
-    const { text, isAudio, location } = await getTextFromMessage(message.message);
-    if (!text) {
-      return;
-    }
 
-    const locationHint = extractLocationRequest(text);
-    const kind = detectKind(text);
-    const lowerText = text.toLowerCase().trim();
+    try {
+      const { text, isAudio, location } = await getTextFromMessage(message);
+      if (!text) {
+        if (isAudio && jid) {
+          await sock.sendMessage(jid, {
+            text: "Nao consegui entender o audio. Tente falar mais perto do microfone ou envie em texto."
+          });
+        }
+        return;
+      }
 
-    if (lowerText.startsWith("admin")) {
-      const masterJid = await getMasterJid();
-      const isDynamicMaster = masterJid && normalizePhone(jid) === normalizePhone(masterJid);
-      const allowed = isDynamicMaster || isMaster(jid);
-      if (!allowed) {
+      const locationHint = extractLocationRequest(text);
+      const kind = detectKind(text);
+      const lowerText = text.toLowerCase().trim();
+
+      if (lowerText.startsWith("admin")) {
+        const masterJid = await getMasterJid();
+        const isDynamicMaster = masterJid && normalizePhone(jid) === normalizePhone(masterJid);
+        const allowed = isDynamicMaster || isMaster(jid);
+        if (!allowed) {
+          await sock.sendMessage(jid, {
+            text: "Apenas o usuario master pode executar comandos administrativos."
+          });
+          return;
+        }
+        if (lowerText.includes("desconectar") || lowerText.includes("logout")) {
+          await sock.sendMessage(jid, { text: "Sessao encerrada. Reconecte via QR." });
+          await clearMasterJid();
+          await sock.logout();
+          return;
+        }
+        if (lowerText.includes("status")) {
+          const current = masterJid || "(nao definido)";
+          await sock.sendMessage(jid, { text: `Master atual: ${current}` });
+          return;
+        }
+      }
+
+      if (location) {
+        const mapLink = buildMapsLink(`${location.lat},${location.lng}`);
         await sock.sendMessage(jid, {
-          text: "Apenas o usuario master pode executar comandos administrativos."
+          text: `Localizacao recebida. Mapa: ${mapLink}. Diga sua cidade/estado para buscar o contato mais proximo.`
         });
-        return;
       }
-      if (lowerText.includes("desconectar") || lowerText.includes("logout")) {
-        await sock.sendMessage(jid, { text: "Sessao encerrada. Reconecte via QR." });
-        await clearMasterJid();
-        await sock.logout();
-        return;
-      }
-      if (lowerText.includes("status")) {
-        const current = masterJid || "(nao definido)";
-        await sock.sendMessage(jid, { text: `Master atual: ${current}` });
-        return;
-      }
-    }
 
-    if (location) {
-      const mapLink = buildMapsLink(`${location.lat},${location.lng}`);
-      await sock.sendMessage(jid, {
-        text: `Localizacao recebida. Mapa: ${mapLink}. Diga sua cidade/estado para buscar o contato mais proximo.`
+      const knowledge = await queryKnowledge({
+        kind,
+        city: locationHint.city,
+        state: locationHint.state,
+        freeText: text
       });
-    }
 
-    const knowledge = await queryKnowledge({
-      kind,
-      city: locationHint.city,
-      state: locationHint.state,
-      freeText: text
-    });
+      const mapsHint = locationHint.city
+        ? buildMapsLink(`${locationHint.city} ${locationHint.state || ""}`)
+        : "";
 
-    const mapsHint = locationHint.city
-      ? buildMapsLink(`${locationHint.city} ${locationHint.state || ""}`)
-      : "";
+      const context = [knowledge, mapsHint].filter(Boolean).join("\n");
+      const response = await generateText(text, context);
 
-    const context = [knowledge, mapsHint].filter(Boolean).join("\n");
-    const response = await generateText(text, context);
+      await sock.sendMessage(jid, { text: response });
 
-    await sock.sendMessage(jid, { text: response });
-
-    if (config.ttsEnabled && isAudio) {
-      const audioBuffer = await synthesizeSpeech(response);
-      if (audioBuffer.length > 0) {
+      if (config.ttsEnabled && isAudio) {
+        const audioBuffer = await synthesizeSpeech(response);
+        if (audioBuffer.length > 0) {
+          await sock.sendMessage(jid, {
+            audio: audioBuffer,
+            mimetype: "audio/mpeg",
+            ptt: true
+          });
+        }
+      }
+    } catch (error) {
+      logger.error({ error }, "Falha ao processar mensagem recebida");
+      if (jid) {
         await sock.sendMessage(jid, {
-          audio: audioBuffer,
-          mimetype: "audio/mpeg",
-          ptt: true
+          text: "Tive um erro ao processar sua mensagem. Tente novamente em alguns segundos."
         });
       }
     }

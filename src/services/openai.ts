@@ -28,12 +28,24 @@ export async function transcribeAudio(buffer: Buffer): Promise<string> {
   const tempFile = path.join(os.tmpdir(), `audio-${Date.now()}.ogg`);
   await fs.writeFile(tempFile, buffer);
   try {
-    const response = await client.audio.transcriptions.create({
-      file: createReadStream(tempFile),
-      model: "gpt-4o-mini-transcribe",
-      language: config.systemLanguage
-    });
-    return response.text || "";
+    const language = config.systemLanguage.toLowerCase().startsWith("pt") ? "pt" : undefined;
+
+    try {
+      const response = await client.audio.transcriptions.create({
+        file: createReadStream(tempFile),
+        model: "gpt-4o-mini-transcribe",
+        language
+      });
+      return response.text || "";
+    } catch (firstError) {
+      logger.warn({ error: firstError }, "Falha no gpt-4o-mini-transcribe. Tentando whisper-1.");
+      const fallback = await client.audio.transcriptions.create({
+        file: createReadStream(tempFile),
+        model: "whisper-1",
+        language
+      });
+      return fallback.text || "";
+    }
   } finally {
     await fs.unlink(tempFile).catch(() => undefined);
   }
