@@ -232,9 +232,9 @@ async function buildMinAgePossessionResponse(): Promise<string> {
 
   return [
     "Para posse/aquisicao civil comum de arma de fogo, a idade minima legal e 25 anos.",
-    `Base legal: Lei 10.826/2003, art. 4o, inciso I; orgao administrativo competente no caso civil: Policia Federal. ${verificationStatus}`,
-    "Na pratica, primeiro confirme que o caso e posse civil comum; depois valide os demais requisitos administrativos antes do protocolo.",
-    `Fonte oficial para conferencia: ${online.sourceUrl}`
+    `Base legal: Lei 10.826/2003, art. 4o, inciso I; orgao competente no caso civil: Policia Federal. ${verificationStatus}`,
+    "Procedimento pratico: confirmar enquadramento civil comum e, em seguida, cumprir os demais requisitos administrativos antes do protocolo.",
+    `Fonte oficial: ${online.sourceUrl}`
   ].join(" ");
 }
 
