@@ -76,7 +76,7 @@ export async function generateText(prompt: string, context: string): Promise<str
               "Nao invente numero de artigo, lei, decreto, portaria ou prazo. " +
               "Se o contexto nao trouxer base suficiente, diga explicitamente que nao ha base suficiente para afirmar com seguranca e peca dados complementares. " +
               "Evite qualquer resposta generica; sempre entregue conclusao pratica acionavel. " +
-              "Responda em texto direto, sem cabecalhos como 'TEMA' ou blocos decorativos, salvo se o usuario pedir explicitamente esse formato. " +
+              "Use obrigatoriamente o formato com os titulos: 'Situacao analisada', 'Base normativa aplicavel', 'Interpretacao pratica', 'Atencoes juridicas importantes', 'Observacao regulatoria', quando o contexto regulatorio estrito exigir. " +
               "Se usar a palavra 'depende', explique imediatamente de quais criterios juridicos e administrativos depende. " +
               "Sempre que possivel, cite o fundamento legal (lei/decreto/norma) em linguagem simples. " +
               "Se houver duvida, conflito normativo, mudanca recente ou falta de contexto, diga isso explicitamente e oriente o usuario a confirmar em fontes oficiais (PF, Exercito, Diario Oficial). " +

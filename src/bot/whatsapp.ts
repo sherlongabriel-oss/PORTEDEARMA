@@ -11,7 +11,7 @@ import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge, searchEntities, type EntityKind } from "../services/knowledge.js";
-import { getMyShootingContext, getMyShootingResponseDirective, getOperationalFocusDirective, isArmsLegalTopic } from "../services/myshooting.js";
+import { getMyShootingContext, getMyShootingResponseDirective, getOperationalFocusDirective, getStrictRegulatoryPolicyDirective, isArmsLegalTopic } from "../services/myshooting.js";
 import { verifyMinAgeForPossessionOnline } from "../services/legalLookup.js";
 import { resolveLegalGrounding } from "../services/legalResolver.js";
 import { resolveCriticalLegalFact } from "../services/legalFacts.js";
@@ -561,6 +561,7 @@ export async function startWhatsAppBot(): Promise<void> {
       const myshooting = getMyShootingContext(text);
       const directive = getMyShootingResponseDirective(text);
       const operationalDirective = getOperationalFocusDirective(text);
+      const strictPolicyDirective = getStrictRegulatoryPolicyDirective();
       const legalTopic = isArmsLegalTopic(text);
 
       let legalResolverContext = "";
@@ -584,7 +585,7 @@ export async function startWhatsAppBot(): Promise<void> {
         const preliminaryPrompt =
           `Pergunta do usuario: ${text}\n\n` +
           "Responda de forma objetiva, sem generalidade, com orientacao inicial pratica e juridicamente segura.";
-        const preliminaryContext = [knowledge, myshooting.context, legalResolverContext, directive, operationalDirective].filter(Boolean).join("\n\n");
+        const preliminaryContext = [knowledge, myshooting.context, legalResolverContext, directive, operationalDirective, strictPolicyDirective].filter(Boolean).join("\n\n");
         const preliminary = await generateText(preliminaryPrompt, preliminaryContext);
 
         await sendReply(`${preliminary}\n\nPara fechar com precisao juridica, informe categoria, UF e contexto objetivo do caso.`);
@@ -598,7 +599,7 @@ export async function startWhatsAppBot(): Promise<void> {
         "Nao use resposta generica."
       ].join("\n");
 
-      const context = [knowledge, mapsHint, myshooting.context, legalResolverContext, directive, operationalDirective].filter(Boolean).join("\n\n");
+      const context = [knowledge, mapsHint, myshooting.context, legalResolverContext, directive, operationalDirective, strictPolicyDirective].filter(Boolean).join("\n\n");
       let response = await generateText(focusedPrompt, context);
 
       if (legalTopic && !isLegalResponseComplete(response)) {
