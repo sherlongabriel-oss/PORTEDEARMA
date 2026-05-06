@@ -19,6 +19,7 @@ import path from "path";
 
 const authDir = path.resolve("auth");
 const pendingNearestByJid = new Map<string, { kind: EntityKind; createdAt: number }>();
+const lastReplyByJid = new Map<string, string>();
 let isStarting = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectAttempt = 0;
@@ -155,6 +156,93 @@ function detectKind(text: string): "delegacia" | "militar" | "clube" | undefined
   return undefined;
 }
 
+function normalizeForCompare(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isCorrectionFeedback(text: string): boolean {
+  const lower = normalizeForCompare(text);
+  return (
+    lower.includes("errado") ||
+    lower.includes("incorreto") ||
+    lower.includes("nao esta certo") ||
+    lower.includes("isso esta errado") ||
+    lower.includes("resposta errada")
+  );
+}
+
+function isMunitionsLimitQuestion(text: string): boolean {
+  const lower = normalizeForCompare(text);
+  const hasMunitions = lower.includes("municao") || lower.includes("municoes") || lower.includes("cartucho") || lower.includes("cartuchos");
+  const asksQuantity =
+    lower.includes("quantas") ||
+    lower.includes("quantidade") ||
+    lower.includes("limite") ||
+    lower.includes("posso comprar") ||
+    lower.includes("comprar por ano") ||
+    lower.includes("comprar por mes");
+  return hasMunitions && asksQuantity;
+}
+
+function extractUserCategory(text: string): string | null {
+  const lower = normalizeForCompare(text);
+  if (lower.includes("cac") || lower.includes("atirador")) {
+    return "CAC (atirador/desportivo)";
+  }
+  if (lower.includes("colecionador")) {
+    return "Colecionador";
+  }
+  if (lower.includes("cacador") || lower.includes("caçador")) {
+    return "Cacador";
+  }
+  if (lower.includes("policia federal") || lower.includes("pf")) {
+    return "Policia Federal";
+  }
+  if (lower.includes("policia civil")) {
+    return "Policia Civil";
+  }
+  if (lower.includes("policia militar")) {
+    return "Policia Militar";
+  }
+  if (lower.includes("policia penal")) {
+    return "Policia Penal";
+  }
+  if (lower.includes("guarda municipal")) {
+    return "Guarda Municipal";
+  }
+  return null;
+}
+
+function buildMunitionsSafeResponse(category: string | null): string {
+  if (!category) {
+    return [
+      "TEMA\nLimite de aquisicao de municoes.",
+      "COMO FUNCIONA NA PRATICA\nNao e juridicamente seguro informar um numero fixo sem enquadramento completo (categoria, orgao competente, ato normativo vigente e finalidade).",
+      "PASSO A PASSO\n1) Informe sua categoria (CAC, PF, PC, PM, Penal, GM etc.).\n2) Informe sua UF e finalidade (treino, servico, competicao).\n3) Informe o sistema/orgão do seu processo (PF ou SFPC/Exercito).\n4) Com esses dados, a resposta pode ser dada com base normativa verificavel.",
+      "BASE LEGAL CONFIRMADA\nLei: Lei 10.826/2003 (Estatuto do Desarmamento).\nDecreto: confirmar ato federal vigente aplicavel ao caso concreto.\nPortaria: confirmar ato vigente do orgao competente (PF/SFPC).\nArtigo: depende do enquadramento especifico.\nOrgao responsavel: Policia Federal e/ou Comando do Exercito (conforme categoria).",
+      "NIVEL DE SEGURANCA DA INFORMACAO\nSem previsao expressa (para numero unico sem categoria definida).",
+      "ALERTAS IMPORTANTES\nInformar ou seguir limite numerico sem base vigente pode gerar autuacao, apreensao, infracao administrativa e responsabilizacao penal.",
+      "LIMITACAO DA RESPOSTA\nNao existe previsao legal expressa de numero unico nacional aplicavel a todos os perfis sem diferenciacao de categoria e ato vigente."
+    ].join("\n\n");
+  }
+
+  return [
+    "TEMA\nLimite de aquisicao de municoes para categoria informada.",
+    "COMO FUNCIONA NA PRATICA\nPara " + category + ", o limite depende de ato normativo vigente do orgao competente e do enquadramento administrativo do caso.",
+    "PASSO A PASSO\n1) Confirmar categoria e registro ativo.\n2) Confirmar orgao competente do processo (PF ou SFPC/Exercito).\n3) Confirmar o ato normativo vigente aplicavel na data da consulta.\n4) Aplicar o limite somente com base nesse ato.",
+    "BASE LEGAL CONFIRMADA\nLei: Lei 10.826/2003.\nDecreto: confirmar decreto federal vigente aplicavel.\nPortaria/IN: confirmar ato vigente do orgao competente.\nArtigo: varia conforme enquadramento e norma especifica.\nOrgao responsavel: PF e/ou Comando do Exercito.",
+    "NIVEL DE SEGURANCA DA INFORMACAO\nRegulamentacao administrativa (depende de ato vigente especifico).",
+    "DIFERENCAS ENTRE CATEGORIAS\nCAC, policiais e demais categorias possuem regimes administrativos distintos; nao e juridicamente seguro unificar um numero sem norma especifica vigente.",
+    "ALERTAS IMPORTANTES\nSeguir numero sem base vigente pode causar autuacao, apreensao, infracao administrativa e responsabilizacao penal.",
+    "LIMITACAO DA RESPOSTA\nNao ha numero confirmavel aqui sem identificacao do ato normativo vigente aplicavel ao seu caso concreto."
+  ].join("\n\n");
+}
+
 export async function startWhatsAppBot(): Promise<void> {
   if (isStarting) {
     logger.info("Inicializacao do WhatsApp ja em andamento. Ignorando chamada duplicada.");
@@ -255,8 +343,17 @@ export async function startWhatsAppBot(): Promise<void> {
       const locationHint = extractLocationRequest(text);
       const kind = detectKind(text);
       const lowerText = text.toLowerCase().trim();
+      const correctionFeedback = isCorrectionFeedback(text);
       const nearestIntent = needsNearestDelegacia(text);
       const pendingNearest = pendingNearestByJid.get(jid);
+
+      if (isMunitionsLimitQuestion(text)) {
+        const category = extractUserCategory(text);
+        const safeReply = buildMunitionsSafeResponse(category);
+        lastReplyByJid.set(jid, normalizeForCompare(safeReply));
+        await sock.sendMessage(jid, { text: safeReply });
+        return;
+      }
 
       if (pendingNearest && Date.now() - pendingNearest.createdAt > 10 * 60 * 1000) {
         pendingNearestByJid.delete(jid);
@@ -360,9 +457,20 @@ export async function startWhatsAppBot(): Promise<void> {
       }
 
       const context = [knowledge, mapsHint, myshooting.context, directive].filter(Boolean).join("\n\n");
-      const response = await generateText(text, context);
+      let response = await generateText(text, context);
+
+      const normalizedResponse = normalizeForCompare(response);
+      const previous = lastReplyByJid.get(jid);
+      if (correctionFeedback && previous && previous === normalizedResponse) {
+        const revisedPrompt =
+          `O usuario informou que sua resposta anterior estava errada.\n` +
+          `Pergunta atual: ${text}\n` +
+          "Obrigatorio: NAO repetir a mesma resposta. Reanalise, explicite limite de confianca e peca os dados minimos faltantes.";
+        response = await generateText(revisedPrompt, context);
+      }
 
       await sock.sendMessage(jid, { text: response });
+      lastReplyByJid.set(jid, normalizeForCompare(response));
 
       if (config.ttsEnabled && isAudio) {
         const audioBuffer = await synthesizeSpeech(response);
