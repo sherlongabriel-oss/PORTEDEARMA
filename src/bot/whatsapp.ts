@@ -15,6 +15,8 @@ import { getMyShootingContext, getMyShootingResponseDirective, getOperationalFoc
 import { verifyMinAgeForPossessionOnline } from "../services/legalLookup.js";
 import { resolveLegalGrounding } from "../services/legalResolver.js";
 import { resolveCriticalLegalFact } from "../services/legalFacts.js";
+import { addCACDocument, listCACDocuments, listExpiringCACDocuments } from "../services/cacDocuments.js";
+import { buildQualityRepairPrompt, isLegalResponseComplete } from "../services/responseQuality.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
 import { getSocket, setLastError, setQr, setSocket, setStatus } from "../services/botState.js";
 import fs from "fs/promises";
@@ -441,6 +443,54 @@ export async function startWhatsAppBot(): Promise<void> {
         }
       }
 
+      if (lowerText.startsWith("doc ")) {
+        const parts = text.trim().split(/\s+/);
+        const command = (parts[1] || "").toLowerCase();
+
+        if (command === "add" && parts.length >= 4) {
+          const dueDate = parts[parts.length - 1];
+          const docType = parts.slice(2, parts.length - 1).join(" ");
+          const success = await addCACDocument(jid, docType, dueDate);
+          await sock.sendMessage(jid, {
+            text: success
+              ? `Documento registrado com sucesso. Tipo: ${docType}. Vencimento: ${dueDate}.`
+              : "Nao foi possivel registrar o documento agora. Verifique a conexao com o banco."
+          });
+          return;
+        }
+
+        if (command === "list") {
+          const docs = await listCACDocuments(jid);
+          if (docs.length === 0) {
+            await sock.sendMessage(jid, { text: "Nenhum documento CAC cadastrado para este usuario." });
+            return;
+          }
+          const msg = docs
+            .map((doc, idx) => `${idx + 1}) ${doc.doc_type} | venc: ${doc.due_date} | status: ${doc.status}`)
+            .join("\n");
+          await sock.sendMessage(jid, { text: `Documentos CAC:\n${msg}` });
+          return;
+        }
+
+        if (command === "vencendo") {
+          const docs = await listExpiringCACDocuments(jid, 30);
+          if (docs.length === 0) {
+            await sock.sendMessage(jid, { text: "Nenhum documento vencendo nos proximos 30 dias." });
+            return;
+          }
+          const msg = docs
+            .map((doc, idx) => `${idx + 1}) ${doc.doc_type} | venc: ${doc.due_date} | status: ${doc.status}`)
+            .join("\n");
+          await sock.sendMessage(jid, { text: `Documentos vencendo em ate 30 dias:\n${msg}` });
+          return;
+        }
+
+        await sock.sendMessage(jid, {
+          text: "Comandos docs: doc add <tipo> <YYYY-MM-DD> | doc list | doc vencendo"
+        });
+        return;
+      }
+
       if (nearestIntent && !hasAnyLocationInfo(locationHint, location)) {
         pendingNearestByJid.set(jid, { kind: "delegacia", createdAt: Date.now() });
         await sock.sendMessage(jid, {
@@ -542,6 +592,11 @@ export async function startWhatsAppBot(): Promise<void> {
 
       const context = [knowledge, mapsHint, myshooting.context, legalResolverContext, directive, operationalDirective].filter(Boolean).join("\n\n");
       let response = await generateText(focusedPrompt, context);
+
+      if (legalTopic && !isLegalResponseComplete(response)) {
+        const repairPrompt = buildQualityRepairPrompt(text, response);
+        response = await generateText(repairPrompt, context);
+      }
 
       const normalizedResponse = normalizeForCompare(response);
       const previous = lastReplyByJid.get(jid);

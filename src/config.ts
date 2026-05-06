@@ -9,6 +9,6 @@ export const config = {
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   masterPhone: process.env.MASTER_PHONE || "",
   ttsEnabled: (process.env.TTS_ENABLED || "true").toLowerCase() === "true",
-  defaultVoice: process.env.DEFAULT_VOICE || "alloy",
+  defaultVoice: process.env.DEFAULT_VOICE || "onyx",
   systemLanguage: process.env.SYSTEM_LANGUAGE || "pt-BR"
 };

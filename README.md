@@ -59,3 +59,14 @@ Regra operacional: se nao houver base oficial vigente cadastrada, a IA deve resp
 - Pagina admin: acesse a raiz do servico (/) para ver o QR e desconectar.
 - Botao "Gerar novo QR" reinicia a sessao do WhatsApp e gera um novo QR.
 - Os dados de conhecimento devem ser mantidos no Supabase.
+- Voz TTS padrao configurada para masculina (`DEFAULT_VOICE=onyx`).
+
+## Gestao de documentos CAC (WhatsApp)
+Comandos disponiveis:
+- `doc add <tipo-do-documento> <YYYY-MM-DD>`
+- `doc list`
+- `doc vencendo`
+
+Exemplo:
+- `doc add CR 2027-03-10`
+- `doc add Habitualidade 2026-12-31`

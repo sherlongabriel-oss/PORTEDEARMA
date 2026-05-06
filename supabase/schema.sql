@@ -85,3 +85,17 @@ create index if not exists legal_norms_status_idx on public.legal_norms (status)
 create index if not exists legal_norms_body_idx on public.legal_norms (issuing_body);
 create index if not exists legal_articles_norm_idx on public.legal_articles (norm_id);
 create index if not exists legal_interp_body_idx on public.legal_admin_interpretations (issuing_body);
+
+create table if not exists public.cac_documents (
+  id uuid primary key default gen_random_uuid(),
+  owner_jid text not null,
+  doc_type text not null,
+  due_date date not null,
+  status text not null default 'ativo' check (status in ('ativo','vencido','arquivado')),
+  notes text,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now()
+);
+
+create index if not exists cac_documents_owner_idx on public.cac_documents (owner_jid);
+create index if not exists cac_documents_due_idx on public.cac_documents (due_date);
