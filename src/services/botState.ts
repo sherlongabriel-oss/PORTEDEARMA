@@ -18,6 +18,10 @@ export function setSocket(socket: WASocket): void {
   socketRef = socket;
 }
 
+export function getSocket(): WASocket | null {
+  return socketRef;
+}
+
 export function setQr(qr: string | null): void {
   state.qr = qr;
   state.updatedAt = new Date().toISOString();

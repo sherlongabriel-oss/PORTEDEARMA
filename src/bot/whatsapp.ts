@@ -10,7 +10,11 @@ import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge } from "../services/knowledge.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
-import { setQr, setSocket, setStatus } from "../services/botState.js";
+import { getSocket, setQr, setSocket, setStatus } from "../services/botState.js";
+import fs from "fs/promises";
+import path from "path";
+
+const authDir = path.resolve("auth");
 
 function normalizePhone(jid: string): string {
   return jid.replace(/[^0-9]/g, "");
@@ -189,4 +193,15 @@ export async function startWhatsAppBot(): Promise<void> {
     }
 
   });
+}
+
+export async function resetWhatsAppSession(): Promise<void> {
+  const sock = getSocket();
+  if (sock) {
+    await sock.logout();
+  }
+  await fs.rm(authDir, { recursive: true, force: true });
+  setQr(null);
+  setStatus("connecting");
+  void startWhatsAppBot();
 }

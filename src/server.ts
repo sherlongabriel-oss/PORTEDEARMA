@@ -1,7 +1,7 @@
 import express from "express";
 import { config } from "./config.js";
 import { logger } from "./utils/logger.js";
-import { startWhatsAppBot } from "./bot/whatsapp.js";
+import { resetWhatsAppSession, startWhatsAppBot } from "./bot/whatsapp.js";
 import { getState, logoutSocket } from "./services/botState.js";
 import { clearMasterJid, getMasterJid } from "./services/master.js";
 import QRCode from "qrcode";
@@ -192,7 +192,7 @@ function adminPageHtml(): string {
           </div>
           <p id="masterText">Master: --</p>
           <div class="actions">
-            <button id="refreshBtn">Atualizar QR</button>
+            <button id="refreshBtn">Gerar novo QR</button>
             <button class="secondary" id="logoutBtn">Desconectar</button>
           </div>
           <div class="footer">Se o QR expirar, clique em Atualizar.</div>
@@ -232,6 +232,8 @@ function adminPageHtml(): string {
       }
 
       refreshBtn.addEventListener("click", async () => {
+        await fetch("/admin/reset", { method: "POST" });
+        await loadStatus();
         await loadQr();
       });
 
@@ -278,6 +280,12 @@ app.get("/admin/qr", async (_req, res) => {
 app.post("/admin/logout", async (_req, res) => {
   await clearMasterJid();
   await logoutSocket();
+  res.json({ ok: true });
+});
+
+app.post("/admin/reset", async (_req, res) => {
+  await clearMasterJid();
+  await resetWhatsAppSession();
   res.json({ ok: true });
 });
 

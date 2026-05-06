@@ -26,4 +26,5 @@ Bot WhatsApp com voz e texto, OpenAI e Supabase. O QR code deve ser usado apenas
 - O master e definido no primeiro QR conectado (ou via MASTER_PHONE se quiser fixar).
 - Comando admin: "admin desconectar" encerra a sessao e limpa o master.
 - Pagina admin: acesse a raiz do servico (/) para ver o QR e desconectar.
+- Botao "Gerar novo QR" reinicia a sessao do WhatsApp e gera um novo QR.
 - Os dados de conhecimento devem ser mantidos no Supabase.
