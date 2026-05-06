@@ -18,6 +18,28 @@ import path from "path";
 
 const authDir = path.resolve("auth");
 const pendingNearestByJid = new Map<string, { kind: EntityKind; createdAt: number }>();
+let isStarting = false;
+let reconnectTimer: NodeJS.Timeout | null = null;
+let reconnectAttempt = 0;
+let activeSessionId = 0;
+
+function clearReconnectTimer(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+function scheduleReconnect(reason: string): void {
+  clearReconnectTimer();
+  reconnectAttempt += 1;
+  const delayMs = Math.min(30_000, 2_000 * reconnectAttempt);
+  logger.warn({ reason, reconnectAttempt, delayMs }, "Agendando reconexao do WhatsApp");
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    void startWhatsAppBot();
+  }, delayMs);
+}
 
 function normalizePhone(jid: string): string {
   return jid.replace(/[^0-9]/g, "");
@@ -133,23 +155,37 @@ function detectKind(text: string): "delegacia" | "militar" | "clube" | undefined
 }
 
 export async function startWhatsAppBot(): Promise<void> {
-  const { state, saveCreds } = await useMultiFileAuthState("auth");
-  const { version, isLatest } = await fetchLatestBaileysVersion();
-  logger.info({ version, isLatest }, "Baileys version loaded");
+  if (isStarting) {
+    logger.info("Inicializacao do WhatsApp ja em andamento. Ignorando chamada duplicada.");
+    return;
+  }
 
-  const sock = makeWASocket({
-    auth: state,
-    browser: Browsers.windows("Desktop"),
-    version,
-    printQRInTerminal: false,
-    markOnlineOnConnect: false,
-    syncFullHistory: false,
-    logger
-  });
-  setStatus("connecting");
-  setSocket(sock);
+  isStarting = true;
+  try {
+    const sessionId = ++activeSessionId;
 
-  sock.ev.on("connection.update", (update) => {
+    const { state, saveCreds } = await useMultiFileAuthState("auth");
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    logger.info({ version, isLatest }, "Baileys version loaded");
+
+    const sock = makeWASocket({
+      auth: state,
+      browser: Browsers.windows("Desktop"),
+      version,
+      printQRInTerminal: false,
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+      logger
+    });
+
+    setStatus("connecting");
+    setSocket(sock);
+
+    sock.ev.on("connection.update", (update) => {
+    if (sessionId !== activeSessionId) {
+      return;
+    }
+
     if (update.qr) {
       qrcode.generate(update.qr, { small: true });
       logger.info("QR code gerado. Apenas o usuario master deve escanear.");
@@ -158,6 +194,8 @@ export async function startWhatsAppBot(): Promise<void> {
       setLastError(null);
     }
     if (update.connection === "open") {
+      reconnectAttempt = 0;
+      clearReconnectTimer();
       setQr(null);
       setStatus("open");
       setLastError(null);
@@ -184,17 +222,17 @@ export async function startWhatsAppBot(): Promise<void> {
           setQr(null);
           setStatus("connecting");
           setLastError("Logged out. Generating new QR.");
-          void startWhatsAppBot();
+          scheduleReconnect("logged_out");
         })();
         return;
       }
-      void startWhatsAppBot();
+      scheduleReconnect(String(reason || "connection_closed"));
     }
-  });
+    });
 
-  sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("messages.upsert", async (m) => {
+    sock.ev.on("messages.upsert", async (m) => {
     const message = m.messages[0];
     if (!message?.message || message.key.fromMe) {
       return;
@@ -326,7 +364,13 @@ export async function startWhatsAppBot(): Promise<void> {
       }
     }
 
-  });
+    });
+  } catch (error) {
+    logger.error({ error }, "Falha ao iniciar cliente WhatsApp");
+    scheduleReconnect("start_error");
+  } finally {
+    isStarting = false;
+  }
 }
 
 export async function resetWhatsAppSession(): Promise<void> {

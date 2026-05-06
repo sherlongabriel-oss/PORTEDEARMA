@@ -287,7 +287,6 @@ app.post("/admin/logout", async (_req, res) => {
 });
 
 app.post("/admin/reset", async (_req, res) => {
-  await clearMasterJid();
   await resetWhatsAppSession();
   res.json({ ok: true });
 });
