@@ -12,6 +12,8 @@ import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge, searchEntities, type EntityKind } from "../services/knowledge.js";
 import { getMyShootingContext, getMyShootingResponseDirective, isArmsLegalTopic } from "../services/myshooting.js";
+import { verifyMinAgeForPossessionOnline } from "../services/legalLookup.js";
+import { resolveLegalGrounding } from "../services/legalResolver.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
 import { getSocket, setLastError, setQr, setSocket, setStatus } from "../services/botState.js";
 import fs from "fs/promises";
@@ -189,6 +191,53 @@ function isMunitionsLimitQuestion(text: string): boolean {
   return hasMunitions && asksQuantity;
 }
 
+function isLikelyQuestion(text: string): boolean {
+  const raw = text.trim();
+  if (raw.includes("?")) {
+    return true;
+  }
+
+  const lower = normalizeForCompare(raw);
+  return [
+    "qual",
+    "quais",
+    "quanto",
+    "quantos",
+    "quantas",
+    "como",
+    "quando",
+    "onde",
+    "posso",
+    "devo",
+    "idade",
+    "limite"
+  ].some((token) => lower.includes(token));
+}
+
+function isMinAgePossessionQuestion(text: string): boolean {
+  const lower = normalizeForCompare(text);
+  const asksAge = lower.includes("idade") || lower.includes("minima") || lower.includes("mínima");
+  const hasPossession = lower.includes("posse") || lower.includes("arma");
+  return asksAge && hasPossession;
+}
+
+async function buildMinAgePossessionResponse(): Promise<string> {
+  const online = await verifyMinAgeForPossessionOnline();
+  const verificationStatus = online.confirmed
+    ? "Confirmado em fonte oficial online."
+    : "Validacao online indisponivel no momento; mantendo base legal consolidada conhecida.";
+
+  return [
+    "TEMA\nIdade minima para aquisicao de arma de fogo por cidadao em regra geral.",
+    "COMO FUNCIONA NA PRATICA\nNa regra geral do Estatuto do Desarmamento, a idade minima exigida e 25 anos para aquisicao com finalidade de posse regular.",
+    "PASSO A PASSO\n1) Confirmar se o caso e posse civil comum.\n2) Confirmar idade minima de 25 anos.\n3) Prosseguir com os demais requisitos legais e administrativos.",
+    "BASE LEGAL CONFIRMADA\nLei: Lei 10.826/2003.\nDecreto: verificar regulamentacao federal vigente complementar.\nPortaria: conforme atos administrativos aplicaveis.\nArtigo: Art. 4o, inciso I.\nOrgao responsavel: Policia Federal (registro civil).",
+    `NIVEL DE SEGURANCA DA INFORMACAO\nConfirmado em lei. ${verificationStatus}`,
+    "ALERTAS IMPORTANTES\nInformar idade inferior como suficiente pode gerar erro material grave, indeferimento administrativo e risco de autuacao em situacoes conexas.",
+    `LIMITACAO DA RESPOSTA\nPode haver regras especificas para categorias funcionais/profissionais distintas da posse civil comum. Fonte oficial: ${online.sourceUrl}`
+  ].join("\n\n");
+}
+
 function extractUserCategory(text: string): string | null {
   const lower = normalizeForCompare(text);
   if (lower.includes("cac") || lower.includes("atirador")) {
@@ -344,8 +393,20 @@ export async function startWhatsAppBot(): Promise<void> {
       const kind = detectKind(text);
       const lowerText = text.toLowerCase().trim();
       const correctionFeedback = isCorrectionFeedback(text);
+      const likelyQuestion = isLikelyQuestion(text);
       const nearestIntent = needsNearestDelegacia(text);
       const pendingNearest = pendingNearestByJid.get(jid);
+
+      if (!likelyQuestion && !correctionFeedback && !location && !lowerText.startsWith("admin")) {
+        return;
+      }
+
+      if (isMinAgePossessionQuestion(text)) {
+        const fixedResponse = await buildMinAgePossessionResponse();
+        await sock.sendMessage(jid, { text: fixedResponse });
+        lastReplyByJid.set(jid, normalizeForCompare(fixedResponse));
+        return;
+      }
 
       if (isMunitionsLimitQuestion(text)) {
         const category = extractUserCategory(text);
@@ -441,11 +502,31 @@ export async function startWhatsAppBot(): Promise<void> {
       const directive = getMyShootingResponseDirective(text);
       const legalTopic = isArmsLegalTopic(text);
 
+      let legalResolverContext = "";
+      if (legalTopic) {
+        const legalResolution = await resolveLegalGrounding(text);
+        legalResolverContext = legalResolution.context;
+
+        if (legalResolution.status === "insufficient") {
+          await sock.sendMessage(jid, {
+            text: [
+              "TEMA\nBase juridica insuficiente para conclusao fechada no caso consultado.",
+              "COMO FUNCIONA NA PRATICA\nSem norma e artigo confirmados para o ponto especifico, nao e seguro concluir com numero ou regra fechada.",
+              "PASSO A PASSO\n1) Informe categoria (CAC, PF, PC, PM, Penal, GM etc.).\n2) Informe UF e contexto objetivo.\n3) Informe se deseja regra geral ou caso concreto.\n4) A resposta sera refeita com base legal confirmada.",
+              "BASE LEGAL CONFIRMADA\nLei: Lei 10.826/2003 (base geral).\nArtigo/ato especifico: nao confirmado para este enunciado na base atual.",
+              "NIVEL DE SEGURANCA DA INFORMACAO\nSem previsao expressa (para conclusao do caso sem dados e norma especifica).",
+              "LIMITACAO DA RESPOSTA\nNao existe base normativa suficiente para afirmar conclusao fechada neste momento."
+            ].join("\n\n")
+          });
+          return;
+        }
+      }
+
       if (legalTopic && myshooting.confidence === "low") {
         const preliminaryPrompt =
           `Pergunta do usuario: ${text}\n\n` +
           "Responda com orientacao geral inicial, em tom pratico e seguro, deixando claro que e uma analise preliminar.";
-        const preliminaryContext = [knowledge, myshooting.context, directive].filter(Boolean).join("\n\n");
+        const preliminaryContext = [knowledge, myshooting.context, legalResolverContext, directive].filter(Boolean).join("\n\n");
         const preliminary = await generateText(preliminaryPrompt, preliminaryContext);
 
         await sock.sendMessage(jid, {
@@ -456,7 +537,7 @@ export async function startWhatsAppBot(): Promise<void> {
         return;
       }
 
-      const context = [knowledge, mapsHint, myshooting.context, directive].filter(Boolean).join("\n\n");
+      const context = [knowledge, mapsHint, myshooting.context, legalResolverContext, directive].filter(Boolean).join("\n\n");
       let response = await generateText(text, context);
 
       const normalizedResponse = normalizeForCompare(response);
