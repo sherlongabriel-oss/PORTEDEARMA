@@ -191,6 +191,7 @@ function adminPageHtml(): string {
             <span id="statusText">Carregando...</span>
           </div>
           <p id="masterText">Master: --</p>
+          <p id="errorText" style="color:#ffb347; font-size:12px;">Erro: --</p>
           <div class="actions">
             <button id="refreshBtn">Gerar novo QR</button>
             <button class="secondary" id="logoutBtn">Desconectar</button>
@@ -203,6 +204,7 @@ function adminPageHtml(): string {
       const statusDot = document.getElementById("statusDot");
       const statusText = document.getElementById("statusText");
       const masterText = document.getElementById("masterText");
+      const errorText = document.getElementById("errorText");
       const qrBox = document.getElementById("qrBox");
       const refreshBtn = document.getElementById("refreshBtn");
       const logoutBtn = document.getElementById("logoutBtn");
@@ -213,6 +215,7 @@ function adminPageHtml(): string {
         statusText.textContent = data.status;
         masterText.textContent = "Master: " + (data.master || "(nao definido)");
         statusDot.className = "dot " + data.status;
+        errorText.textContent = "Erro: " + (data.lastError || "-");
       }
 
       async function loadQr() {
@@ -264,7 +267,7 @@ app.get("/", (_req, res) => {
 app.get("/admin/status", async (_req, res) => {
   const state = getState();
   const master = await getMasterJid();
-  res.json({ status: state.status, master, updatedAt: state.updatedAt });
+  res.json({ status: state.status, master, lastError: state.lastError, updatedAt: state.updatedAt });
 });
 
 app.get("/admin/qr", async (_req, res) => {
@@ -293,4 +296,15 @@ app.listen(config.port, () => {
   logger.info(`Server running on port ${config.port}`);
 });
 
-void startWhatsAppBot();
+async function bootWhatsApp(): Promise<void> {
+  try {
+    await startWhatsAppBot();
+  } catch (error) {
+    logger.error({ error }, "Failed to start WhatsApp bot. Retrying in 5s.");
+    setTimeout(() => {
+      void bootWhatsApp();
+    }, 5000);
+  }
+}
+
+void bootWhatsApp();

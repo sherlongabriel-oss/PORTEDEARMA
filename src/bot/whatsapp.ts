@@ -10,7 +10,7 @@ import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge } from "../services/knowledge.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
-import { getSocket, setQr, setSocket, setStatus } from "../services/botState.js";
+import { getSocket, setLastError, setQr, setSocket, setStatus } from "../services/botState.js";
 import fs from "fs/promises";
 import path from "path";
 
@@ -95,10 +95,12 @@ export async function startWhatsAppBot(): Promise<void> {
       logger.info("QR code gerado. Apenas o usuario master deve escanear.");
       setQr(update.qr);
       setStatus("connecting");
+      setLastError(null);
     }
     if (update.connection === "open") {
       setQr(null);
       setStatus("open");
+      setLastError(null);
       void (async () => {
         const existing = await getMasterJid();
         if (!existing) {
@@ -112,6 +114,9 @@ export async function startWhatsAppBot(): Promise<void> {
     }
     if (update.connection === "close") {
       setStatus("close");
+      const err = update.lastDisconnect?.error as any;
+      const msg = err?.message || err?.output?.payload?.message || "Connection closed";
+      setLastError(msg);
       const reason = (update.lastDisconnect?.error as any)?.output?.statusCode;
       if (reason !== DisconnectReason.loggedOut) {
         void startWhatsAppBot();
