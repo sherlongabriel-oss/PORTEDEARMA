@@ -1,0 +1,39 @@
+import type { WASocket } from "@whiskeysockets/baileys";
+
+interface BotState {
+  qr: string | null;
+  status: "connecting" | "open" | "close" | "unknown";
+  updatedAt: string;
+}
+
+const state: BotState = {
+  qr: null,
+  status: "unknown",
+  updatedAt: new Date().toISOString()
+};
+
+let socketRef: WASocket | null = null;
+
+export function setSocket(socket: WASocket): void {
+  socketRef = socket;
+}
+
+export function setQr(qr: string | null): void {
+  state.qr = qr;
+  state.updatedAt = new Date().toISOString();
+}
+
+export function setStatus(status: BotState["status"]): void {
+  state.status = status;
+  state.updatedAt = new Date().toISOString();
+}
+
+export function getState(): BotState {
+  return { ...state };
+}
+
+export async function logoutSocket(): Promise<void> {
+  if (socketRef) {
+    await socketRef.logout();
+  }
+}

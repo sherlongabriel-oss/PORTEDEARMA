@@ -10,6 +10,7 @@ import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge } from "../services/knowledge.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
+import { setQr, setSocket, setStatus } from "../services/botState.js";
 
 function normalizePhone(jid: string): string {
   return jid.replace(/[^0-9]/g, "");
@@ -82,13 +83,18 @@ export async function startWhatsAppBot(): Promise<void> {
     printQRInTerminal: false,
     logger
   });
+  setSocket(sock);
 
   sock.ev.on("connection.update", (update) => {
     if (update.qr) {
       qrcode.generate(update.qr, { small: true });
       logger.info("QR code gerado. Apenas o usuario master deve escanear.");
+      setQr(update.qr);
+      setStatus("connecting");
     }
     if (update.connection === "open") {
+      setQr(null);
+      setStatus("open");
       void (async () => {
         const existing = await getMasterJid();
         if (!existing) {
@@ -101,6 +107,7 @@ export async function startWhatsAppBot(): Promise<void> {
       })();
     }
     if (update.connection === "close") {
+      setStatus("close");
       const reason = (update.lastDisconnect?.error as any)?.output?.statusCode;
       if (reason !== DisconnectReason.loggedOut) {
         void startWhatsAppBot();
