@@ -229,14 +229,11 @@ async function buildMinAgePossessionResponse(): Promise<string> {
     : "Validacao online indisponivel no momento; mantendo base legal consolidada conhecida.";
 
   return [
-    "TEMA\nIdade minima para aquisicao de arma de fogo por cidadao em regra geral.",
-    "COMO FUNCIONA NA PRATICA\nNa regra geral do Estatuto do Desarmamento, a idade minima exigida e 25 anos para aquisicao com finalidade de posse regular.",
-    "PASSO A PASSO\n1) Confirmar se o caso e posse civil comum.\n2) Confirmar idade minima de 25 anos.\n3) Prosseguir com os demais requisitos legais e administrativos.",
-    "BASE LEGAL CONFIRMADA\nLei: Lei 10.826/2003.\nDecreto: verificar regulamentacao federal vigente complementar.\nPortaria: conforme atos administrativos aplicaveis.\nArtigo: Art. 4o, inciso I.\nOrgao responsavel: Policia Federal (registro civil).",
-    `NIVEL DE SEGURANCA DA INFORMACAO\nConfirmado em lei. ${verificationStatus}`,
-    "ALERTAS IMPORTANTES\nInformar idade inferior como suficiente pode gerar erro material grave, indeferimento administrativo e risco de autuacao em situacoes conexas.",
-    `LIMITACAO DA RESPOSTA\nPode haver regras especificas para categorias funcionais/profissionais distintas da posse civil comum. Fonte oficial: ${online.sourceUrl}`
-  ].join("\n\n");
+    "Para posse/aquisicao civil comum de arma de fogo, a idade minima legal e 25 anos.",
+    `Base legal: Lei 10.826/2003, art. 4o, inciso I; orgao administrativo competente no caso civil: Policia Federal. ${verificationStatus}`,
+    "Na pratica, primeiro confirme que o caso e posse civil comum; depois valide os demais requisitos administrativos antes do protocolo.",
+    `Fonte oficial para conferencia: ${online.sourceUrl}`
+  ].join(" ");
 }
 
 function extractUserCategory(text: string): string | null {
@@ -271,26 +268,19 @@ function extractUserCategory(text: string): string | null {
 function buildMunitionsSafeResponse(category: string | null): string {
   if (!category) {
     return [
-      "TEMA\nLimite de aquisicao de municoes.",
-      "COMO FUNCIONA NA PRATICA\nNao e juridicamente seguro informar um numero fixo sem enquadramento completo (categoria, orgao competente, ato normativo vigente e finalidade).",
-      "PASSO A PASSO\n1) Informe sua categoria (CAC, PF, PC, PM, Penal, GM etc.).\n2) Informe sua UF e finalidade (treino, servico, competicao).\n3) Informe o sistema/orgão do seu processo (PF ou SFPC/Exercito).\n4) Com esses dados, a resposta pode ser dada com base normativa verificavel.",
-      "BASE LEGAL CONFIRMADA\nLei: Lei 10.826/2003 (Estatuto do Desarmamento).\nDecreto: confirmar ato federal vigente aplicavel ao caso concreto.\nPortaria: confirmar ato vigente do orgao competente (PF/SFPC).\nArtigo: depende do enquadramento especifico.\nOrgao responsavel: Policia Federal e/ou Comando do Exercito (conforme categoria).",
-      "NIVEL DE SEGURANCA DA INFORMACAO\nSem previsao expressa (para numero unico sem categoria definida).",
-      "ALERTAS IMPORTANTES\nInformar ou seguir limite numerico sem base vigente pode gerar autuacao, apreensao, infracao administrativa e responsabilizacao penal.",
-      "LIMITACAO DA RESPOSTA\nNao existe previsao legal expressa de numero unico nacional aplicavel a todos os perfis sem diferenciacao de categoria e ato vigente."
-    ].join("\n\n");
+      "Nao e correto informar um numero unico de municoes sem definir categoria, orgao competente e ato normativo vigente.",
+      "Base geral: Lei 10.826/2003; a regra especifica depende de regulacao administrativa aplicavel (PF e/ou Comando do Exercito, conforme categoria).",
+      "Para resposta exata, informe categoria, UF, finalidade e se o processo e na PF ou no SFPC/Exercito.",
+      "Sem esses dados, qualquer numero fechado seria juridicamente inseguro e pode gerar autuacao, apreensao e responsabilizacao."
+    ].join(" ");
   }
 
   return [
-    "TEMA\nLimite de aquisicao de municoes para categoria informada.",
-    "COMO FUNCIONA NA PRATICA\nPara " + category + ", o limite depende de ato normativo vigente do orgao competente e do enquadramento administrativo do caso.",
-    "PASSO A PASSO\n1) Confirmar categoria e registro ativo.\n2) Confirmar orgao competente do processo (PF ou SFPC/Exercito).\n3) Confirmar o ato normativo vigente aplicavel na data da consulta.\n4) Aplicar o limite somente com base nesse ato.",
-    "BASE LEGAL CONFIRMADA\nLei: Lei 10.826/2003.\nDecreto: confirmar decreto federal vigente aplicavel.\nPortaria/IN: confirmar ato vigente do orgao competente.\nArtigo: varia conforme enquadramento e norma especifica.\nOrgao responsavel: PF e/ou Comando do Exercito.",
-    "NIVEL DE SEGURANCA DA INFORMACAO\nRegulamentacao administrativa (depende de ato vigente especifico).",
-    "DIFERENCAS ENTRE CATEGORIAS\nCAC, policiais e demais categorias possuem regimes administrativos distintos; nao e juridicamente seguro unificar um numero sem norma especifica vigente.",
-    "ALERTAS IMPORTANTES\nSeguir numero sem base vigente pode causar autuacao, apreensao, infracao administrativa e responsabilizacao penal.",
-    "LIMITACAO DA RESPOSTA\nNao ha numero confirmavel aqui sem identificacao do ato normativo vigente aplicavel ao seu caso concreto."
-  ].join("\n\n");
+    `Para ${category}, o limite de municao nao deve ser informado sem vincular a ato normativo vigente do orgao competente no seu caso.`,
+    "Base geral: Lei 10.826/2003; a quantificacao depende da regulacao administrativa aplicavel e da categoria funcional/administrativa.",
+    "No procedimento correto, confirme categoria e registro ativos, identifique o orgao competente (PF ou SFPC/Exercito) e aplique apenas a regra vigente da data da consulta.",
+    "Sem o ato especifico vigente, nao ha numero juridicamente seguro para fechar resposta."
+  ].join(" ");
 }
 
 export async function startWhatsAppBot(): Promise<void> {
@@ -519,13 +509,10 @@ export async function startWhatsAppBot(): Promise<void> {
         if (legalResolution.status === "insufficient") {
           await sock.sendMessage(jid, {
             text: [
-              "TEMA\nBase juridica insuficiente para conclusao fechada no caso consultado.",
-              "COMO FUNCIONA NA PRATICA\nSem norma e artigo confirmados para o ponto especifico, nao e seguro concluir com numero ou regra fechada.",
-              "PASSO A PASSO\n1) Informe categoria (CAC, PF, PC, PM, Penal, GM etc.).\n2) Informe UF e contexto objetivo.\n3) Informe se deseja regra geral ou caso concreto.\n4) A resposta sera refeita com base legal confirmada.",
-              "BASE LEGAL CONFIRMADA\nLei: Lei 10.826/2003 (base geral).\nArtigo/ato especifico: nao confirmado para este enunciado na base atual.",
-              "NIVEL DE SEGURANCA DA INFORMACAO\nSem previsao expressa (para conclusao do caso sem dados e norma especifica).",
-              "LIMITACAO DA RESPOSTA\nNao existe base normativa suficiente para afirmar conclusao fechada neste momento."
-            ].join("\n\n")
+              "Nao ha base normativa suficiente, na base atual, para fechar conclusao juridica especifica sem risco de erro.",
+              "Base geral identificada: Lei 10.826/2003; artigo/ato especifico para o seu enunciado ainda nao foi confirmado aqui.",
+              "Para resposta exata e objetiva, envie categoria, UF e contexto concreto (regra geral ou caso pratico)."
+            ].join(" ")
           });
           return;
         }
@@ -541,7 +528,7 @@ export async function startWhatsAppBot(): Promise<void> {
         await sock.sendMessage(jid, {
           text:
             `${preliminary}\n\n` +
-            "Para maior precisao juridica no padrao MyShooting IA, me informe: (1) tipo de situacao (porte, posse, transporte ou CAC), (2) sua UF e (3) contexto objetivo do caso."
+            "Para fechar com precisao juridica, informe categoria, UF e contexto objetivo do caso."
         });
         return;
       }
