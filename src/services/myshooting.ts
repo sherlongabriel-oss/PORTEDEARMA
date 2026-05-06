@@ -181,3 +181,48 @@ export function getMyShootingResponseDirective(question: string): string {
     "Evite texto genérico, floreio e respostas vagas."
   ].join("\n");
 }
+
+export function getOperationalFocusDirective(question: string): string {
+  const lower = normalize(question);
+  const profile = detectAudienceProfile(question);
+
+  const profileRule =
+    profile === "policial"
+      ? "Foco operacional policial: conformidade funcional, cadeia de responsabilidade e risco de autuacao em fiscalizacao."
+      : profile === "cac"
+        ? "Foco operacional CAC: regularidade documental, limites administrativos e transporte legal."
+        : profile === "formacao"
+          ? "Foco de formacao: didatica tecnica sem simplificacoes juridicas indevidas."
+          : "Foco geral: resposta juridica pratica e verificavel.";
+
+  const topicRules: string[] = [];
+
+  if (lower.includes("munic") || lower.includes("cartucho")) {
+    topicRules.push("Tema municao: nunca informar numero exato sem ato normativo especifico vigente e categoria definida.");
+  }
+  if (lower.includes("porte")) {
+    topicRules.push("Tema porte: diferenciar autorizacao de porte, local de porte e restricoes operacionais.");
+  }
+  if (lower.includes("posse")) {
+    topicRules.push("Tema posse: delimitar guarda no local autorizado e diferenciar de porte.");
+  }
+  if (lower.includes("transporte") || lower.includes("trafego") || lower.includes("tráfego")) {
+    topicRules.push("Tema transporte/trafego: explicar condicionantes documentais, rota/finalidade e risco de fiscalizacao.");
+  }
+  if (lower.includes("registro") || lower.includes("sinarm") || lower.includes("sigma") || lower.includes("cr")) {
+    topicRules.push("Tema registro/CR: informar fluxo administrativo objetivo, documentos e pontos de indeferimento.");
+  }
+
+  if (topicRules.length === 0) {
+    topicRules.push("Aplicar foco em decisao pratica: o que pode, o que nao pode e o que precisa comprovar.");
+  }
+
+  return [
+    "DIRETIVA OPERACIONAL ANTI-GENERICA:",
+    profileRule,
+    ...topicRules,
+    "Formato de objetividade: resposta curta, tecnicamente densa, sem floreio.",
+    "Obrigatorio incluir: decisao pratica + fundamento + risco + proximo passo.",
+    "Proibido responder com frases vagas como 'depende' sem explicar exatamente de que depende."
+  ].join("\n");
+}

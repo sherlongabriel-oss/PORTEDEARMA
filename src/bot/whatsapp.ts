@@ -11,7 +11,7 @@ import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
 import { generateText, synthesizeSpeech, transcribeAudio } from "../services/openai.js";
 import { buildMapsLink, queryKnowledge, searchEntities, type EntityKind } from "../services/knowledge.js";
-import { getMyShootingContext, getMyShootingResponseDirective, isArmsLegalTopic } from "../services/myshooting.js";
+import { getMyShootingContext, getMyShootingResponseDirective, getOperationalFocusDirective, isArmsLegalTopic } from "../services/myshooting.js";
 import { verifyMinAgeForPossessionOnline } from "../services/legalLookup.js";
 import { resolveLegalGrounding } from "../services/legalResolver.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
@@ -500,6 +500,7 @@ export async function startWhatsAppBot(): Promise<void> {
         : "";
       const myshooting = getMyShootingContext(text);
       const directive = getMyShootingResponseDirective(text);
+      const operationalDirective = getOperationalFocusDirective(text);
       const legalTopic = isArmsLegalTopic(text);
 
       let legalResolverContext = "";
@@ -525,8 +526,8 @@ export async function startWhatsAppBot(): Promise<void> {
       if (legalTopic && myshooting.confidence === "low") {
         const preliminaryPrompt =
           `Pergunta do usuario: ${text}\n\n` +
-          "Responda com orientacao geral inicial, em tom pratico e seguro, deixando claro que e uma analise preliminar.";
-        const preliminaryContext = [knowledge, myshooting.context, legalResolverContext, directive].filter(Boolean).join("\n\n");
+          "Responda de forma objetiva, sem generalidade, com orientacao inicial pratica e juridicamente segura.";
+        const preliminaryContext = [knowledge, myshooting.context, legalResolverContext, directive, operationalDirective].filter(Boolean).join("\n\n");
         const preliminary = await generateText(preliminaryPrompt, preliminaryContext);
 
         await sock.sendMessage(jid, {
@@ -537,8 +538,15 @@ export async function startWhatsAppBot(): Promise<void> {
         return;
       }
 
-      const context = [knowledge, mapsHint, myshooting.context, legalResolverContext, directive].filter(Boolean).join("\n\n");
-      let response = await generateText(text, context);
+      const focusedPrompt = [
+        `Pergunta do usuario: ${text}`,
+        "Requisito de resposta: seja especifico e operacional.",
+        "Entregue: decisao pratica objetiva, base legal aplicavel, risco juridico e proximo passo acionavel.",
+        "Nao use resposta generica."
+      ].join("\n");
+
+      const context = [knowledge, mapsHint, myshooting.context, legalResolverContext, directive, operationalDirective].filter(Boolean).join("\n\n");
+      let response = await generateText(focusedPrompt, context);
 
       const normalizedResponse = normalizeForCompare(response);
       const previous = lastReplyByJid.get(jid);
