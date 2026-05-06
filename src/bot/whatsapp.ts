@@ -373,11 +373,23 @@ export async function startWhatsAppBot(): Promise<void> {
 
     try {
       const { text, isAudio, location } = await getTextFromMessage(message);
+      const sendReply = async (replyText: string): Promise<void> => {
+        await sock.sendMessage(jid, { text: replyText });
+        if (config.ttsEnabled && isAudio) {
+          const audioBuffer = await synthesizeSpeech(replyText);
+          if (audioBuffer.length > 0) {
+            await sock.sendMessage(jid, {
+              audio: audioBuffer,
+              mimetype: "audio/mpeg",
+              ptt: true
+            });
+          }
+        }
+      };
+
       if (!text) {
         if (isAudio && jid) {
-          await sock.sendMessage(jid, {
-            text: "Nao consegui entender o audio. Tente falar mais perto do microfone ou envie em texto."
-          });
+          await sendReply("Nao consegui entender o audio. Tente falar mais perto do microfone ou envie em texto.");
         }
         return;
       }
@@ -396,14 +408,14 @@ export async function startWhatsAppBot(): Promise<void> {
 
       const criticalFactResponse = resolveCriticalLegalFact(text);
       if (criticalFactResponse) {
-        await sock.sendMessage(jid, { text: criticalFactResponse });
+        await sendReply(criticalFactResponse);
         lastReplyByJid.set(jid, normalizeForCompare(criticalFactResponse));
         return;
       }
 
       if (isMinAgePossessionQuestion(text)) {
         const fixedResponse = await buildMinAgePossessionResponse();
-        await sock.sendMessage(jid, { text: fixedResponse });
+        await sendReply(fixedResponse);
         lastReplyByJid.set(jid, normalizeForCompare(fixedResponse));
         return;
       }
@@ -412,7 +424,7 @@ export async function startWhatsAppBot(): Promise<void> {
         const category = extractUserCategory(text);
         const safeReply = buildMunitionsSafeResponse(category);
         lastReplyByJid.set(jid, normalizeForCompare(safeReply));
-        await sock.sendMessage(jid, { text: safeReply });
+        await sendReply(safeReply);
         return;
       }
 
@@ -557,13 +569,13 @@ export async function startWhatsAppBot(): Promise<void> {
         legalResolverContext = legalResolution.context;
 
         if (legalResolution.status === "insufficient") {
-          await sock.sendMessage(jid, {
-            text: [
+          await sendReply(
+            [
               "Nao ha base normativa suficiente, na base atual, para fechar conclusao juridica especifica sem risco de erro.",
               "Base geral identificada: Lei 10.826/2003; artigo/ato especifico para o seu enunciado ainda nao foi confirmado aqui.",
               "Para resposta exata e objetiva, envie categoria, UF e contexto concreto (regra geral ou caso pratico)."
             ].join(" ")
-          });
+          );
           return;
         }
       }
@@ -575,11 +587,7 @@ export async function startWhatsAppBot(): Promise<void> {
         const preliminaryContext = [knowledge, myshooting.context, legalResolverContext, directive, operationalDirective].filter(Boolean).join("\n\n");
         const preliminary = await generateText(preliminaryPrompt, preliminaryContext);
 
-        await sock.sendMessage(jid, {
-          text:
-            `${preliminary}\n\n` +
-            "Para fechar com precisao juridica, informe categoria, UF e contexto objetivo do caso."
-        });
+        await sendReply(`${preliminary}\n\nPara fechar com precisao juridica, informe categoria, UF e contexto objetivo do caso.`);
         return;
       }
 

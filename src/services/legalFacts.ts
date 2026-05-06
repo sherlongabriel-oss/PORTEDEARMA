@@ -11,11 +11,14 @@ function isMinAgePossessionQuestion(text: string): boolean {
     lower.includes("idade minima") ||
     lower.includes("idade") ||
     lower.includes("quantos anos") ||
-    lower.includes("idade para");
+    lower.includes("idade para") ||
+    lower.includes("anos para");
   const asksPossession =
     lower.includes("posse") ||
     lower.includes("possuir arma") ||
     lower.includes("ter arma") ||
+    lower.includes("comprar arma") ||
+    lower.includes("comprar uma arma") ||
     lower.includes("compra de arma") ||
     lower.includes("adquirir arma");
   return asksAge && asksPossession;
