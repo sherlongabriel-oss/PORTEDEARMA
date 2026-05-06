@@ -14,6 +14,7 @@ import { buildMapsLink, queryKnowledge, searchEntities, type EntityKind } from "
 import { getMyShootingContext, getMyShootingResponseDirective, getOperationalFocusDirective, isArmsLegalTopic } from "../services/myshooting.js";
 import { verifyMinAgeForPossessionOnline } from "../services/legalLookup.js";
 import { resolveLegalGrounding } from "../services/legalResolver.js";
+import { resolveCriticalLegalFact } from "../services/legalFacts.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
 import { getSocket, setLastError, setQr, setSocket, setStatus } from "../services/botState.js";
 import fs from "fs/promises";
@@ -398,6 +399,13 @@ export async function startWhatsAppBot(): Promise<void> {
       const pendingNearest = pendingNearestByJid.get(jid);
 
       if (!likelyQuestion && !correctionFeedback && !location && !lowerText.startsWith("admin")) {
+        return;
+      }
+
+      const criticalFactResponse = resolveCriticalLegalFact(text);
+      if (criticalFactResponse) {
+        await sock.sendMessage(jid, { text: criticalFactResponse });
+        lastReplyByJid.set(jid, normalizeForCompare(criticalFactResponse));
         return;
       }
 
