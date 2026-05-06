@@ -344,13 +344,16 @@ export async function startWhatsAppBot(): Promise<void> {
       const legalTopic = isArmsLegalTopic(text);
 
       if (legalTopic && myshooting.confidence === "low") {
+        const preliminaryPrompt =
+          `Pergunta do usuario: ${text}\n\n` +
+          "Responda com orientacao geral inicial, em tom pratico e seguro, deixando claro que e uma analise preliminar.";
+        const preliminaryContext = [knowledge, myshooting.context].filter(Boolean).join("\n\n");
+        const preliminary = await generateText(preliminaryPrompt, preliminaryContext);
+
         await sock.sendMessage(jid, {
           text:
-            "Para te responder com alta precisao juridica (padrao MyShooting IA), preciso de mais detalhes do caso: tipo de situacao (porte, posse, transporte, CAC), sua UF e contexto objetivo."
-        });
-        await sock.sendMessage(jid, {
-          text:
-            "Sem esses dados, posso te passar apenas orientacao geral e recomendar confirmacao em fonte oficial (PF, Exercito e Diario Oficial)."
+            `${preliminary}\n\n` +
+            "Para maior precisao juridica no padrao MyShooting IA, me informe: (1) tipo de situacao (porte, posse, transporte ou CAC), (2) sua UF e (3) contexto objetivo do caso."
         });
         return;
       }
