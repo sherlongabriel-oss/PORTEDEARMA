@@ -1,4 +1,4 @@
-import { supabase } from "./supabase.js";
+import { getSupabaseClient } from "./supabase.js";
 
 export type EntityKind = "delegacia" | "militar" | "clube";
 
@@ -11,6 +11,11 @@ export interface KnowledgeQuery {
 
 export async function queryKnowledge(query: KnowledgeQuery): Promise<string> {
   const { kind, city, state, freeText } = query;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return "Base de dados indisponivel no momento.";
+  }
 
   let builder = supabase
     .from("entities")
