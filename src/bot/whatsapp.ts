@@ -628,16 +628,16 @@ export async function startWhatsAppBot(): Promise<void> {
       let evidenceSourcesBlock = "";
 
       if (questionLike || legalTopic || currentEventQuestion) {
-        const webEvidence = await resolveWebEvidence(text);
+        const webEvidence = await resolveWebEvidence(text, { officialOnly: legalTopic });
         evidenceContext = webEvidence.context;
         evidenceSourcesBlock = formatEvidenceSources(webEvidence.sources);
 
-        if ((legalTopic || currentEventQuestion) && webEvidence.status === "insufficient") {
+        if ((legalTopic || currentEventQuestion) && webEvidence.status !== "grounded") {
           await sendReply(
             [
-              "Nao encontrei convergencia suficiente em fontes confiaveis para afirmar isso com seguranca agora.",
-              "Para evitar erro, nao vou fechar uma conclusao factual sem evidencias externas consistentes.",
-              "Se quiser, eu refaco a busca com recorte de data, orgao ou norma especifica."
+              "Nao consegui confirmar isso com seguranca em fontes oficiais suficientes agora.",
+              "Para evitar erro juridico, nao vou fechar conclusao sem varredura oficial convergente (PF, Exercito, Gov.br, DOU, STF/STJ).",
+              "Se quiser, eu refaco a consulta com recorte de norma, periodo e orgao especifico."
             ].join(" ")
           );
           return;

@@ -26,6 +26,10 @@ export interface WebEvidenceResult {
   sources: EvidenceSource[];
 }
 
+export interface WebEvidenceOptions {
+  officialOnly?: boolean;
+}
+
 function hostnameOf(urlText: string): string {
   try {
     return new URL(urlText).hostname.toLowerCase();
@@ -40,6 +44,10 @@ function isAllowedDomain(hostname: string, allowedDomains: string[]): boolean {
   }
 
   return allowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+}
+
+function isOfficialDomain(hostname: string): boolean {
+  return hostname.endsWith(".gov.br") || hostname.endsWith(".jus.br") || hostname.endsWith(".leg.br");
 }
 
 function buildUnavailableContext(): string {
@@ -72,7 +80,7 @@ function buildGroundedContext(sources: EvidenceSource[]): string {
   ].join("\n");
 }
 
-export async function resolveWebEvidence(question: string): Promise<WebEvidenceResult> {
+export async function resolveWebEvidence(question: string, options?: WebEvidenceOptions): Promise<WebEvidenceResult> {
   if (!config.newsSearchEnabled) {
     return {
       status: "unavailable",
@@ -90,6 +98,7 @@ export async function resolveWebEvidence(question: string): Promise<WebEvidenceR
   }
 
   const allowedDomains = config.newsAllowedDomains;
+  const officialOnly = options?.officialOnly === true;
   if (allowedDomains.length === 0) {
     return {
       status: "unavailable",
@@ -99,28 +108,49 @@ export async function resolveWebEvidence(question: string): Promise<WebEvidenceR
   }
 
   const query = `${question} Brasil`;
-  const endpoint = new URL("https://www.googleapis.com/customsearch/v1");
-  endpoint.searchParams.set("key", config.googleApiKey);
-  endpoint.searchParams.set("cx", config.googleCseId);
-  endpoint.searchParams.set("q", query);
-  endpoint.searchParams.set("hl", "pt-BR");
-  endpoint.searchParams.set("gl", "br");
-  endpoint.searchParams.set("num", "8");
-  endpoint.searchParams.set("dateRestrict", "m12");
+  const legalQueryHints = [
+    "Lei 10.826/2003",
+    "Decreto 11.615/2023",
+    "Policia Federal",
+    "Exercito Brasileiro"
+  ].join(" ");
+  const queries = [query, `${query} ${legalQueryHints}`];
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const mergedItems: GoogleSearchItem[] = [];
+    let hadAnyHttpSuccess = false;
 
-    const response = await fetch(endpoint.toString(), {
-      method: "GET",
-      signal: controller.signal
-    });
+    for (const queryText of queries) {
+      const endpoint = new URL("https://www.googleapis.com/customsearch/v1");
+      endpoint.searchParams.set("key", config.googleApiKey);
+      endpoint.searchParams.set("cx", config.googleCseId);
+      endpoint.searchParams.set("q", queryText);
+      endpoint.searchParams.set("hl", "pt-BR");
+      endpoint.searchParams.set("gl", "br");
+      endpoint.searchParams.set("num", "8");
+      endpoint.searchParams.set("dateRestrict", "m12");
 
-    clearTimeout(timer);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
 
-    if (!response.ok) {
-      logger.warn({ status: response.status }, "Falha ao consultar Google Custom Search");
+      const response = await fetch(endpoint.toString(), {
+        method: "GET",
+        signal: controller.signal
+      });
+
+      clearTimeout(timer);
+
+      if (!response.ok) {
+        logger.warn({ status: response.status, queryText }, "Falha ao consultar Google Custom Search");
+        continue;
+      }
+
+      hadAnyHttpSuccess = true;
+      const payload = (await response.json()) as GoogleSearchResponse;
+      mergedItems.push(...(payload.items || []));
+    }
+
+    if (!hadAnyHttpSuccess) {
       return {
         status: "unavailable",
         context: buildUnavailableContext(),
@@ -128,10 +158,7 @@ export async function resolveWebEvidence(question: string): Promise<WebEvidenceR
       };
     }
 
-    const payload = (await response.json()) as GoogleSearchResponse;
-    const rawItems = payload.items || [];
-
-    const normalized = rawItems
+    const normalized = mergedItems
       .map((item) => {
         const link = item.link || "";
         const domain = hostnameOf(link);
@@ -144,8 +171,16 @@ export async function resolveWebEvidence(question: string): Promise<WebEvidenceR
       })
       .filter((item) => item.link && item.domain && isAllowedDomain(item.domain, allowedDomains));
 
+    const filteredByMode = officialOnly ? normalized.filter((item) => isOfficialDomain(item.domain)) : normalized;
+
+    const officialFirst = filteredByMode.sort((a, b) => {
+      const aOfficial = isOfficialDomain(a.domain) ? 1 : 0;
+      const bOfficial = isOfficialDomain(b.domain) ? 1 : 0;
+      return bOfficial - aOfficial;
+    });
+
     const dedupedByDomain = new Map<string, EvidenceSource>();
-    for (const item of normalized) {
+    for (const item of officialFirst) {
       if (!dedupedByDomain.has(item.domain)) {
         dedupedByDomain.set(item.domain, item);
       }
