@@ -10,5 +10,12 @@ export const config = {
   masterPhone: process.env.MASTER_PHONE || "",
   ttsEnabled: (process.env.TTS_ENABLED || "true").toLowerCase() === "true",
   defaultVoice: process.env.DEFAULT_VOICE || "onyx",
-  systemLanguage: process.env.SYSTEM_LANGUAGE || "pt-BR"
+  systemLanguage: process.env.SYSTEM_LANGUAGE || "pt-BR",
+  googleApiKey: process.env.GOOGLE_API_KEY || "",
+  googleCseId: process.env.GOOGLE_CSE_ID || "",
+  newsSearchEnabled: (process.env.NEWS_SEARCH_ENABLED || "true").toLowerCase() === "true",
+  newsAllowedDomains: (process.env.NEWS_ALLOWED_DOMAINS || "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
 };

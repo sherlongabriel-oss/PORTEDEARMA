@@ -13,6 +13,23 @@ Bot WhatsApp com voz e texto, OpenAI e Supabase. O QR code deve ser usado apenas
 3. Preencha as tabelas com os dados de delegacias, organizacoes militares e clubes.
 	- Voce pode importar um CSV no Supabase usando o modelo em supabase/seed.template.csv.
 
+### Busca web verificavel (Google Custom Search)
+Para respostas mais confiaveis sobre noticias e atualizacoes, o bot pode consultar fontes externas e exigir convergencia de fontes.
+
+1. Ative a `Custom Search API` no Google Cloud.
+2. Gere uma `API Key` no projeto.
+3. Crie um mecanismo no Programmable Search Engine e copie o `cx`.
+4. Configure no `.env`:
+	- `GOOGLE_API_KEY`
+	- `GOOGLE_CSE_ID`
+	- `NEWS_SEARCH_ENABLED=true`
+	- `NEWS_ALLOWED_DOMAINS=planalto.gov.br,in.gov.br,gov.br,stf.jus.br,stj.jus.br,camara.leg.br,senado.leg.br,g1.globo.com,uol.com.br,cnnbrasil.com.br`
+
+Regra operacional da busca web:
+- O bot so fecha afirmacao factual quando encontra ao menos 2 fontes confiaveis filtradas por dominio.
+- Se nao houver convergencia, o bot responde com limite de confianca e pede recorte de data/orgao/norma.
+- Quando houver fontes, o bot inclui links consultados na resposta.
+
 ## Base juridica oficial (MyShooting IA)
 Para respostas juridicas verificaveis, alimente as tabelas de normas oficiais no Supabase.
 

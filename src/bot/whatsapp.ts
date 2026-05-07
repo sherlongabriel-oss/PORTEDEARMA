@@ -17,6 +17,7 @@ import { resolveLegalGrounding } from "../services/legalResolver.js";
 import { resolveCriticalLegalFact } from "../services/legalFacts.js";
 import { addCACDocument, listCACDocuments, listExpiringCACDocuments } from "../services/cacDocuments.js";
 import { buildQualityRepairPrompt, isLegalResponseComplete } from "../services/responseQuality.js";
+import { resolveWebEvidence } from "../services/webEvidence.js";
 import { clearMasterJid, getMasterJid, setMasterJid } from "../services/master.js";
 import { getSocket, setLastError, setQr, setSocket, setStatus } from "../services/botState.js";
 import fs from "fs/promises";
@@ -215,6 +216,34 @@ function isLikelyQuestion(text: string): boolean {
     "idade",
     "limite"
   ].some((token) => lower.includes(token));
+}
+
+function isNewsOrCurrentEventQuestion(text: string): boolean {
+  const lower = normalizeForCompare(text);
+  return (
+    lower.includes("noticia") ||
+    lower.includes("noticias") ||
+    lower.includes("atualizacao") ||
+    lower.includes("atualizacao") ||
+    lower.includes("mudou") ||
+    lower.includes("mudanca") ||
+    lower.includes("ultima") ||
+    lower.includes("hoje") ||
+    lower.includes("esta valendo")
+  );
+}
+
+function formatEvidenceSources(sources: Array<{ title: string; link: string; domain: string }>): string {
+  if (sources.length === 0) {
+    return "";
+  }
+
+  const lines = sources
+    .slice(0, 4)
+    .map((item, index) => `${index + 1}) ${item.title} (${item.domain})\n${item.link}`)
+    .join("\n\n");
+
+  return `Fontes consultadas:\n${lines}`;
 }
 
 function isMinAgePossessionQuestion(text: string): boolean {
@@ -591,8 +620,30 @@ export async function startWhatsAppBot(): Promise<void> {
       const operationalDirective = getOperationalFocusDirective(text);
       const strictPolicyDirective = getStrictRegulatoryPolicyDirective();
       const legalTopic = isArmsLegalTopic(text);
+      const currentEventQuestion = isNewsOrCurrentEventQuestion(text);
+      const questionLike = isLikelyQuestion(text);
 
       let legalResolverContext = "";
+      let evidenceContext = "";
+      let evidenceSourcesBlock = "";
+
+      if (questionLike || legalTopic || currentEventQuestion) {
+        const webEvidence = await resolveWebEvidence(text);
+        evidenceContext = webEvidence.context;
+        evidenceSourcesBlock = formatEvidenceSources(webEvidence.sources);
+
+        if ((legalTopic || currentEventQuestion) && webEvidence.status === "insufficient") {
+          await sendReply(
+            [
+              "Nao encontrei convergencia suficiente em fontes confiaveis para afirmar isso com seguranca agora.",
+              "Para evitar erro, nao vou fechar uma conclusao factual sem evidencias externas consistentes.",
+              "Se quiser, eu refaco a busca com recorte de data, orgao ou norma especifica."
+            ].join(" ")
+          );
+          return;
+        }
+      }
+
       if (legalTopic) {
         const legalResolution = await resolveLegalGrounding(text);
         legalResolverContext = legalResolution.context;
@@ -613,10 +664,11 @@ export async function startWhatsAppBot(): Promise<void> {
         const preliminaryPrompt =
           `Pergunta do usuario: ${text}\n\n` +
           "Responda de forma objetiva, sem generalidade, com orientacao inicial pratica e juridicamente segura.";
-        const preliminaryContext = [knowledge, myshooting.context, legalResolverContext, directive, operationalDirective, strictPolicyDirective].filter(Boolean).join("\n\n");
+        const preliminaryContext = [knowledge, myshooting.context, legalResolverContext, evidenceContext, directive, operationalDirective, strictPolicyDirective].filter(Boolean).join("\n\n");
         const preliminary = await generateText(preliminaryPrompt, preliminaryContext);
 
-        await sendReply(`${preliminary}\n\nPara fechar com precisao juridica, informe categoria, UF e contexto objetivo do caso.`);
+        const preliminaryWithSources = evidenceSourcesBlock ? `${preliminary}\n\n${evidenceSourcesBlock}` : preliminary;
+        await sendReply(`${preliminaryWithSources}\n\nPara fechar com precisao juridica, informe categoria, UF e contexto objetivo do caso.`);
         return;
       }
 
@@ -624,10 +676,11 @@ export async function startWhatsAppBot(): Promise<void> {
         `Pergunta do usuario: ${text}`,
         "Requisito de resposta: seja especifico e operacional.",
         "Entregue: decisao pratica objetiva, base legal aplicavel, risco juridico e proximo passo acionavel.",
+        "Se houver contexto de evidencias web, nao afirme nada fora das fontes listadas e cite os links no texto final.",
         "Nao use resposta generica."
       ].join("\n");
 
-      const context = [knowledge, mapsHint, myshooting.context, legalResolverContext, directive, operationalDirective, strictPolicyDirective].filter(Boolean).join("\n\n");
+      const context = [knowledge, mapsHint, myshooting.context, legalResolverContext, evidenceContext, directive, operationalDirective, strictPolicyDirective].filter(Boolean).join("\n\n");
       let response = await generateText(focusedPrompt, context);
 
       if (legalTopic && !isLegalResponseComplete(response)) {
@@ -643,6 +696,10 @@ export async function startWhatsAppBot(): Promise<void> {
           `Pergunta atual: ${text}\n` +
           "Obrigatorio: NAO repetir a mesma resposta. Reanalise, explicite limite de confianca e peca os dados minimos faltantes.";
         response = await generateText(revisedPrompt, context);
+      }
+
+      if (evidenceSourcesBlock) {
+        response = `${response}\n\n${evidenceSourcesBlock}`;
       }
 
       await sock.sendMessage(jid, { text: response });
